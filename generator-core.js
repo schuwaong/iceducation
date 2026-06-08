@@ -419,12 +419,58 @@
     return Boolean(loadCourse());
   }
 
+  function encodeRequest(rawRequest) {
+    const request = normalizeRequest(rawRequest);
+    const json = JSON.stringify(request);
+    return btoa(unescape(encodeURIComponent(json)));
+  }
+
+  function decodeRequest(encoded) {
+    if (!encoded) {
+      return null;
+    }
+
+    try {
+      const json = decodeURIComponent(escape(atob(encoded)));
+      return normalizeRequest(JSON.parse(json));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function buildShareUrl(request, baseUrl) {
+    const target = new URL(baseUrl || window.location.href, window.location.href);
+    target.pathname = target.pathname.replace(/index\.html$/i, "coach.html").replace(/\/$/, "/coach.html");
+    target.search = "";
+    target.hash = "";
+    target.searchParams.set("level", "custom");
+    target.searchParams.set("course", encodeRequest(request));
+    return target.toString();
+  }
+
+  function importCourseFromQuery(search) {
+    const params = new URLSearchParams(search || window.location.search);
+    const encoded = params.get("course");
+    const request = decodeRequest(encoded);
+    if (!request) {
+      return null;
+    }
+
+    const course = buildCourse(request);
+    saveCourse(course);
+    return course;
+  }
+
   window.ICECourseGenerator = {
     STORAGE_KEY,
     buildCourse,
     saveCourse,
     loadCourse,
     clearCourse,
-    hasCourse
+    hasCourse,
+    encodeRequest,
+    decodeRequest,
+    buildShareUrl,
+    importCourseFromQuery
   };
 })();

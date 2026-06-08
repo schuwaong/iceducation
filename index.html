@@ -134,7 +134,7 @@ Weekly revision structure</textarea>
 
       const course = window.ICECourseGenerator.buildCourse(payload);
       window.ICECourseGenerator.saveCourse(course);
-      window.location.href = "coach.html?level=custom";
+      window.location.href = window.ICECourseGenerator.buildShareUrl(course.request, window.location.href);
     });
   </script>
 </body>

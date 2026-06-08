@@ -1864,6 +1864,7 @@ const feedbackBody = document.getElementById("feedback-body");
 const continueButton = document.getElementById("continue-button");
 const skipButton = document.getElementById("skip-question");
 const startButton = document.getElementById("start-session");
+const shareCourseButton = document.getElementById("share-course");
 const resetButton = document.getElementById("reset-progress");
 const masteredCount = document.getElementById("mastered-count");
 const queueCount = document.getElementById("queue-count");
@@ -2070,7 +2071,8 @@ function refreshCurrentLevelData(levelId) {
 }
 
 function buildCustomLevelConfig() {
-  const customCourse = window.ICECourseGenerator?.loadCourse?.();
+  const importedCourse = window.ICECourseGenerator?.importCourseFromQuery?.();
+  const customCourse = importedCourse || window.ICECourseGenerator?.loadCourse?.();
 
   if (!customCourse) {
     return {
@@ -2647,6 +2649,9 @@ function renderLevelChrome() {
   }
   topicMapTitle.textContent = level.mapTitle;
   pathTitle.textContent = level.pathTitle;
+  if (shareCourseButton) {
+    shareCourseButton.hidden = state.currentLevel !== LEVEL_CUSTOM_ID || !window.ICECourseGenerator?.loadCourse?.();
+  }
 
   topicPills.innerHTML = "";
   chapters.forEach((chapter) => {
@@ -2852,6 +2857,36 @@ function maybeAutostartFromUrl() {
   startChapter(targetChapter.id);
 }
 
+async function handleShareCourse() {
+  if (state.currentLevel !== LEVEL_CUSTOM_ID) {
+    return;
+  }
+
+  const customCourse = window.ICECourseGenerator?.loadCourse?.();
+  if (!customCourse?.request) {
+    return;
+  }
+
+  const shareUrl = window.ICECourseGenerator.buildShareUrl(customCourse.request, window.location.href);
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      if (shareCourseButton) {
+        shareCourseButton.textContent = "Link Copied";
+        window.setTimeout(() => {
+          shareCourseButton.textContent = "Share Course";
+        }, 1600);
+      }
+      return;
+    } catch (error) {
+      // Fall through to prompt.
+    }
+  }
+
+  window.prompt("Copy this course link:", shareUrl);
+}
+
 notesTab.addEventListener("click", () => setView("notes"));
 practiceTab.addEventListener("click", () => {
   if (!state.activeChapterId) {
@@ -2882,6 +2917,10 @@ startButton.addEventListener("click", () => {
   const nextChapter = chapters.find((chapter) => !state.completedChapters.includes(chapter.id)) || getSelectedChapter();
   startChapter(nextChapter.id);
 });
+
+if (shareCourseButton) {
+  shareCourseButton.addEventListener("click", handleShareCourse);
+}
 
 continueButton.addEventListener("click", handleContinue);
 skipButton.addEventListener("click", handleSkip);
