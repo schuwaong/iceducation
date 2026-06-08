@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CFA Study Coach</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow" id="hero-level-label">CFA Level I Tutor</p>
+        <h1 id="hero-title">Study notes, practice worksheets, and replay-based review.</h1>
+        <div class="hero-actions">
+          <button class="primary-button" id="start-session">Start Session</button>
+          <a class="ghost-button link-button" href="index.html">All Levels</a>
+          <button class="ghost-button" id="reset-progress">Reset Progress</button>
+        </div>
+        <p class="note">Original practice prompts only. These are not official CFA Institute exam questions.</p>
+      </div>
+
+      <section class="hero-panel">
+        <div class="metric-row">
+          <article class="metric-card">
+            <span class="metric-label">Mastered</span>
+            <strong class="metric-value" id="mastered-count">0</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Queue</span>
+            <strong class="metric-value" id="queue-count">0</strong>
+          </article>
+          <article class="metric-card">
+            <span class="metric-label">Streak</span>
+            <strong class="metric-value" id="streak-count">0</strong>
+          </article>
+        </div>
+
+        <div class="topic-map">
+          <div class="map-header">
+            <h2 id="topic-map-title">Current Level I Topic Map</h2>
+            <div class="level-switch" role="tablist" aria-label="CFA level switcher">
+              <button class="level-tab" id="level-custom-tab" role="tab" aria-selected="false">Custom</button>
+              <button class="level-tab active" id="level-1-tab" role="tab" aria-selected="true">Level I</button>
+              <button class="level-tab" id="level-2-tab" role="tab" aria-selected="false">Level II</button>
+              <button class="level-tab locked" id="level-3-tab" role="tab" aria-selected="false">Level III</button>
+            </div>
+          </div>
+          <div class="topic-pills" id="topic-pills"></div>
+        </div>
+      </section>
+    </header>
+
+    <main class="workspace">
+      <aside class="path-panel">
+        <div class="panel-heading">
+          <p class="eyebrow">Path</p>
+          <h2 id="path-title">Level I Run</h2>
+        </div>
+        <div class="lesson-list" id="lesson-list"></div>
+      </aside>
+
+      <section class="lesson-stage">
+        <div class="stage-topbar">
+          <div>
+            <p class="eyebrow">Lesson Flow</p>
+            <h2 id="stage-title">Pick a lesson to begin</h2>
+          </div>
+          <div class="progress-cluster">
+            <span class="progress-caption" id="progress-caption">No lesson active</span>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="view-toggle" role="tablist" aria-label="Chapter views">
+          <button class="view-tab active" id="notes-tab" role="tab" aria-selected="true">Study Notes</button>
+          <button class="view-tab" id="practice-tab" role="tab" aria-selected="false">Practice Worksheet</button>
+        </div>
+
+        <div class="card-stack">
+          <section class="teaching-card" id="teaching-card">
+            <section class="notes-view" id="notes-view">
+              <div class="teaching-topline">
+                <span class="tag" id="chapter-topic">Chapter</span>
+                <span class="queue-tag" id="chapter-status">Ready to study</span>
+              </div>
+              <h3 id="chapter-title">Choose a chapter to load the study notes.</h3>
+              <p class="chapter-summary" id="chapter-summary">
+                Pick a chapter from the left rail and this panel will show the key ideas, watch-outs,
+                and a short schedule to get you from first read to clean worksheet run.
+              </p>
+
+              <div class="concept-box">
+                <p class="concept-label">Chapter Lens</p>
+                <p class="concept-copy" id="chapter-teach">
+                  Each chapter now has a notes view before you jump into the worksheet.
+                </p>
+              </div>
+
+              <section class="syllabus-box">
+                <div class="schedule-header">
+                  <div>
+                    <p class="concept-label">Syllabus Coverage</p>
+                    <h3 class="schedule-title">What this topic includes</h3>
+                  </div>
+                  <p class="schedule-caption" id="weight-caption">Official topic weight</p>
+                </div>
+                <ul class="syllabus-list" id="syllabus-list"></ul>
+              </section>
+
+              <div class="highlight-grid" id="highlight-grid"></div>
+
+              <section class="notes-sections" id="notes-sections"></section>
+
+              <section class="formula-box">
+                <div class="schedule-header">
+                  <div>
+                    <p class="concept-label">Formula And Exam Anchors</p>
+                    <h3 class="schedule-title">What to keep at your fingertips</h3>
+                  </div>
+                </div>
+                <ul class="formula-list" id="formula-list"></ul>
+              </section>
+
+              <section class="schedule-box">
+                <div class="schedule-header">
+                  <div>
+                    <p class="concept-label">Study Sequence</p>
+                    <h3 class="schedule-title">How to learn this chapter in order</h3>
+                  </div>
+                  <p class="schedule-caption" id="schedule-caption">No chapter selected</p>
+                </div>
+                <div class="schedule-list" id="schedule-list"></div>
+              </section>
+
+              <div class="note-actions">
+                <button class="primary-button" id="notes-start-button">Open Practice Worksheet</button>
+              </div>
+            </section>
+
+            <section class="practice-view" id="practice-view" hidden>
+              <div class="teaching-topline">
+                <span class="tag" id="question-topic">Topic</span>
+                <span class="queue-tag" id="replay-state">Fresh card</span>
+              </div>
+              <div class="question-meta-row">
+                <span class="tag" id="question-set-label">Item Set</span>
+                <span class="difficulty-badge" id="question-difficulty">Medium</span>
+                <span class="tag" id="question-year">2026</span>
+                <span class="tag" id="question-position">Question 1</span>
+              </div>
+              <div class="vignette-card" id="vignette-card">
+                <p class="concept-label">Case Vignette</p>
+                <h3 id="vignette-title">Choose a lesson to load an item set.</h3>
+                <p class="vignette-copy" id="vignette-copy">
+                  CFA practice context will appear here.
+                </p>
+              </div>
+              <h3 id="question-prompt">Choose a lesson to see the first question.</h3>
+              <div class="concept-box">
+                <p class="concept-label">Key idea</p>
+                <p class="concept-copy" id="concept-copy">
+                  Each question comes with a quick teaching note so you can learn while you practice.
+                </p>
+              </div>
+              <div class="answer-grid" id="answer-grid"></div>
+              <div class="feedback-panel" id="feedback-panel" hidden>
+                <p class="feedback-title" id="feedback-title"></p>
+                <p class="feedback-body" id="feedback-body"></p>
+              </div>
+              <div class="card-actions">
+                <button class="ghost-button" id="skip-question">Skip</button>
+                <button class="primary-button" id="continue-button" disabled>Continue</button>
+              </div>
+            </section>
+          </section>
+
+          <aside class="coach-rail">
+            <article class="coach-card">
+              <p class="eyebrow">Coach Notes</p>
+              <h3>How the replay queue works</h3>
+              <p>
+                Miss a question and it gets sent to the back of the line. The lesson only completes
+                when every card has been answered correctly at least once.
+              </p>
+            </article>
+
+            <article class="coach-card">
+              <p class="eyebrow">Review Lane</p>
+              <ul class="review-list" id="review-list">
+                <li>No repeats waiting yet.</li>
+              </ul>
+            </article>
+
+            <article class="coach-card">
+              <p class="eyebrow">Session Stats</p>
+              <dl class="stats-list">
+                <div>
+                  <dt>Correct</dt>
+                  <dd id="correct-count">0</dd>
+                </div>
+                <div>
+                  <dt>Missed</dt>
+                  <dd id="missed-count">0</dd>
+                </div>
+                <div>
+                  <dt>Replay cards</dt>
+                  <dd id="repeat-count">0</dd>
+                </div>
+              </dl>
+            </article>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="generator-core.js"></script>
+  <script src="level-one-data.js"></script>
+  <script src="question-packs.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

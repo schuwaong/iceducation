@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CFA Levels</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="shell level-shell">
+    <main class="level-hub">
+      <section class="hub-hero">
+        <p class="eyebrow">ICEducation</p>
+        <h1>Generate a study site from what a student wants to learn</h1>
+        <p class="hub-copy">Use the builder below for a custom subject, or open the ready-made CFA levels.</p>
+      </section>
+
+      <section class="generator-shell">
+        <div class="generator-copy">
+          <p class="eyebrow">Course Builder</p>
+          <h2>Student prompt in, study site out</h2>
+          <p class="hub-copy">
+            Enter the subject, goal, focus areas, and quiz style. The site will generate
+            notes, a study sequence, and replay-based practice in the same coach layout.
+          </p>
+        </div>
+
+        <form class="generator-form" id="generator-form">
+          <label class="field">
+            <span>What should the student learn?</span>
+            <input id="subject-input" name="subject" type="text" value="GCSE Biology" required>
+          </label>
+
+          <label class="field">
+            <span>Goal</span>
+            <input id="goal-input" name="goal" type="text" value="Master cell biology, genetics, and core exam questions" required>
+          </label>
+
+          <label class="field">
+            <span>Focus areas</span>
+            <textarea id="focus-input" name="focusAreas" rows="5">Cell structure
+Photosynthesis and respiration
+DNA, genes, and inheritance
+Required practicals
+Common exam traps and definitions</textarea>
+          </label>
+
+          <div class="field-row">
+            <label class="field">
+              <span>Learner level</span>
+              <select id="learner-level" name="learnerLevel">
+                <option value="beginner">Beginner</option>
+                <option value="intermediate" selected>Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Quiz style</span>
+              <select id="quiz-style" name="quizStyle">
+                <option value="standalone" selected>Standalone 3-choice</option>
+                <option value="case">Short case sets</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label class="field">
+              <span>Modules</span>
+              <input id="module-count" name="moduleCount" type="number" min="3" max="8" value="6">
+            </label>
+
+            <label class="field">
+              <span>Questions per module</span>
+              <input id="question-count" name="questionsPerModule" type="number" min="4" max="20" value="8">
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Extra notes or syllabus lines</span>
+            <textarea id="source-input" name="sourceText" rows="4">Exam command words
+Worked examples
+Weekly revision structure</textarea>
+          </label>
+
+          <div class="generator-actions">
+            <button class="primary-button" type="submit">Generate Study Site</button>
+            <a class="ghost-button link-button" href="coach.html?level=custom">Open Last Custom Site</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="level-grid" aria-label="CFA levels">
+        <a class="level-card" href="coach.html?level=level1">
+          <p class="level-label">Level I</p>
+          <h2>Foundation build</h2>
+          <p>Core topic notes, 3-choice practice, and question years shown on each card.</p>
+        </a>
+
+        <a class="level-card" href="coach.html?level=level2">
+          <p class="level-label">Level II</p>
+          <h2>Item-set training</h2>
+          <p>Chapter notes, vignette-style practice, replay review, and expanded question sets.</p>
+        </a>
+
+        <article class="level-card locked-level" aria-disabled="true">
+          <p class="level-label">Level III</p>
+          <h2>Locked for now</h2>
+          <p>This lane will open when the Level III tutor is built.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="generator-core.js"></script>
+  <script>
+    const form = document.getElementById("generator-form");
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const payload = {
+        subject: document.getElementById("subject-input").value,
+        goal: document.getElementById("goal-input").value,
+        focusAreas: document.getElementById("focus-input").value,
+        learnerLevel: document.getElementById("learner-level").value,
+        quizStyle: document.getElementById("quiz-style").value,
+        moduleCount: document.getElementById("module-count").value,
+        questionsPerModule: document.getElementById("question-count").value,
+        sourceText: document.getElementById("source-input").value
+      };
+
+      const course = window.ICECourseGenerator.buildCourse(payload);
+      window.ICECourseGenerator.saveCourse(course);
+      window.location.href = "coach.html?level=custom";
+    });
+  </script>
+</body>
+</html>
