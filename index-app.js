@@ -75,8 +75,11 @@
     bridgeOnline: false,
     bridgeNote: "",
     aiGenerationReady: false,
+    uploadMarkingReady: false,
+    catalog: CATALOG,
     syllabusSubjectOrder: Object.keys(FALLBACK_SYLLABUS_TOPICS),
     syllabusTopicsBySubject: { ...FALLBACK_SYLLABUS_TOPICS },
+    syllabusTopicsByKey: {},
     topicalOptions: [],
     selectedTopicIds: [],
     recommendations: null
@@ -293,8 +296,8 @@
       };
     }
     return {
-      syllabus: Object.keys(CATALOG)[0],
-      level: Object.keys(CATALOG["Cambridge IGCSE"].levels)[0],
+      syllabus: Object.keys(state.catalog || CATALOG)[0] || "Cambridge IGCSE",
+      level: Object.keys((state.catalog || CATALOG)["Cambridge IGCSE"]?.levels || { IGCSE: [] })[0] || "IGCSE",
       topic: "Biology",
       chapterIds: ["14"],
       chapterId: "14",
@@ -353,6 +356,11 @@
   }
 
   function topicsForSubject(subject) {
+    const syllabus = safeText(elements.syllabusSelect?.value || defaultRequest().syllabus);
+    const key = `${syllabus}::${safeText(subject)}`;
+    if (Array.isArray(state.syllabusTopicsByKey[key])) {
+      return state.syllabusTopicsByKey[key];
+    }
     return Array.isArray(state.syllabusTopicsBySubject[subject])
       ? state.syllabusTopicsBySubject[subject]
       : [];
@@ -625,24 +633,36 @@
 
   function syncLevelOptions(preferredLevel) {
     const syllabus = elements.syllabusSelect.value || defaultRequest().syllabus;
-    const levels = Object.keys(CATALOG[syllabus].levels);
+    const catalog = state.catalog || CATALOG;
+    const levels = Object.keys(catalog[syllabus]?.levels || {});
     fillSelect(elements.levelSelect, levels);
     if (preferredLevel && levels.includes(preferredLevel)) {
       elements.levelSelect.value = preferredLevel;
+    } else if (!levels.includes(elements.levelSelect.value) && levels.length) {
+      elements.levelSelect.value = levels[0];
     }
     syncTopicOptions();
   }
 
   function syncTopicOptions(preferredTopic) {
-    const subjects = unique([
-      ...state.syllabusSubjectOrder,
-      ...(CATALOG["Cambridge IGCSE"]?.levels?.IGCSE || [])
-    ]);
+    const syllabus = safeText(elements.syllabusSelect.value || defaultRequest().syllabus);
+    const level = safeText(elements.levelSelect.value);
+    const catalogSubjects = state.catalog?.[syllabus]?.levels?.[level] || [];
+    const fallbackSubjects = CATALOG[syllabus]?.levels?.[level] || CATALOG["Cambridge IGCSE"]?.levels?.IGCSE || [];
+    const subjects = unique(
+      catalogSubjects.length
+        ? catalogSubjects
+        : fallbackSubjects.length
+          ? fallbackSubjects
+          : state.syllabusSubjectOrder
+    );
     fillSelect(elements.topicSelect, subjects);
     if (preferredTopic && subjects.includes(preferredTopic)) {
       elements.topicSelect.value = preferredTopic;
     } else if (subjects.includes("Biology")) {
       elements.topicSelect.value = "Biology";
+    } else if (!subjects.includes(elements.topicSelect.value) && subjects.length) {
+      elements.topicSelect.value = subjects[0];
     }
     syncChapterOptions();
   }
@@ -822,8 +842,7 @@
 
   async function loadOfficialTopicOptions() {
     const request = readRequestFromForm();
-    const subject = generatorSubjectForRequest(request);
-    if (!state.bridgeOnline || !subject) {
+    if (!state.bridgeOnline) {
       syncTopicOptions(request.topic);
       syncChapterOptions(request.chapterIds || request.chapterId);
       syncSubtopicOptions(request.subtopicIds || request.subtopicId);
@@ -838,31 +857,81 @@
         throw new Error(`HTTP ${response.status}`);
       }
       const payload = await response.json();
-      const subjects = payload?.topical?.subjects || [];
+      const syllabi = Array.isArray(payload?.catalog?.syllabi) ? payload.catalog.syllabi : [];
+      const nextCatalog = syllabi.length ? {} : { ...CATALOG };
       const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
+      const nextTopicsByKey = {};
       const nextSubjects = [];
-      subjects.forEach((item) => {
-        const label = safeText(item.label || item.value);
-        if (!label) {
-          return;
+      syllabi.forEach((syllabusItem) => {
+        const syllabusName = safeText(syllabusItem.name);
+        const subjects = Array.isArray(syllabusItem.subjects) ? syllabusItem.subjects : [];
+        const subjectLabels = [];
+        subjects.forEach((item) => {
+          const label = safeText(item.label || item.value);
+          if (!label) {
+            return;
+          }
+          subjectLabels.push(label);
+          nextSubjects.push(label);
+          const packs = Array.isArray(item.topicPacks)
+            ? item.topicPacks
+                .map((pack) => ({
+                  id: safeText(pack.id),
+                  title: safeText(pack.title),
+                  subtopics: Array.isArray(pack.subtopics)
+                    ? pack.subtopics
+                        .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
+                        .filter((subtopic) => subtopic.id && subtopic.title)
+                    : []
+                }))
+                .filter((pack) => pack.id && pack.title)
+            : [];
+          if (syllabusName) {
+            nextTopicsByKey[`${syllabusName}::${label}`] = packs;
+          }
+          if (!nextTopicsBySubject[label]) {
+            nextTopicsBySubject[label] = packs;
+          }
+        });
+        if (syllabusName) {
+          const levels = Array.isArray(syllabusItem.levels) && syllabusItem.levels.length ? syllabusItem.levels : ["Standard"];
+          nextCatalog[syllabusName] = {
+            levels: Object.fromEntries(levels.map((level) => [safeText(level), subjectLabels]))
+          };
         }
-        nextSubjects.push(label);
-        nextTopicsBySubject[label] = Array.isArray(item.topicPacks)
-          ? item.topicPacks
-              .map((pack) => ({
-                id: safeText(pack.id),
-                title: safeText(pack.title),
-                subtopics: Array.isArray(pack.subtopics)
-                  ? pack.subtopics
-                      .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
-                      .filter((subtopic) => subtopic.id && subtopic.title)
-                  : []
-              }))
-              .filter((pack) => pack.id && pack.title)
-          : [];
       });
+      if (!syllabi.length) {
+        const subjects = payload?.topical?.subjects || [];
+        subjects.forEach((item) => {
+          const label = safeText(item.label || item.value);
+          if (!label) {
+            return;
+          }
+          nextSubjects.push(label);
+          nextTopicsBySubject[label] = Array.isArray(item.topicPacks)
+            ? item.topicPacks
+                .map((pack) => ({
+                  id: safeText(pack.id),
+                  title: safeText(pack.title),
+                  subtopics: Array.isArray(pack.subtopics)
+                    ? pack.subtopics
+                        .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
+                        .filter((subtopic) => subtopic.id && subtopic.title)
+                    : []
+                }))
+                .filter((pack) => pack.id && pack.title)
+            : [];
+        });
+      }
+      state.catalog = nextCatalog;
       state.syllabusSubjectOrder = unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]);
       state.syllabusTopicsBySubject = nextTopicsBySubject;
+      state.syllabusTopicsByKey = nextTopicsByKey;
+      fillSelect(elements.syllabusSelect, Object.keys(state.catalog));
+      if (Object.keys(state.catalog).includes(request.syllabus)) {
+        elements.syllabusSelect.value = request.syllabus;
+      }
+      syncLevelOptions(request.level);
       syncTopicOptions(request.topic);
       syncChapterOptions(request.chapterIds || request.chapterId);
       syncSubtopicOptions(request.subtopicIds || request.subtopicId);
@@ -1476,15 +1545,25 @@
       }
       const payload = await response.json();
       state.aiGenerationReady = Boolean(payload.studyPackGenerationConfigured);
-      const providerHint = payload.geminiConfigured || payload.deepseekConfigured
-        ? "AI marking provider configured"
-        : "Bridge online, but API keys still needed for real marking";
+      state.uploadMarkingReady = Boolean(payload.uploadMarkingConfigured || payload.geminiConfigured || payload.deepseekConfigured);
+      const providerHint = payload.geminiConfigured
+        ? `${payload.geminiModel || "Gemini 2.5 Flash"} thinking marking ready`
+        : payload.deepseekConfigured
+          ? "DeepSeek marking ready"
+          : "Bridge online, but API keys still needed for upload marking";
       setBridgeStatus(true, providerHint);
       await loadOfficialTopicOptions();
       await loadRecommendations();
     } catch (error) {
       state.aiGenerationReady = false;
-      setBridgeStatus(false, "Autograder offline. Start the local bridge to enable upload marking.");
+      state.uploadMarkingReady = false;
+      const publicSite = window.location.hostname.endsWith("github.io");
+      setBridgeStatus(
+        false,
+        publicSite
+          ? "Upload marking needs the local bridge or a deployed API backend; this public page cannot reach your private computer automatically."
+          : "Autograder offline. Start the local bridge to enable upload marking."
+      );
       state.topicalOptions = [];
       renderOfficialTopicChoices();
     }
@@ -2090,7 +2169,10 @@
       return;
     }
     if (!state.bridgeOnline) {
-      renderMarkingResult("<p class=\"hub-copy\">The local autograder bridge is offline. Start it, then upload again.</p>");
+      const message = window.location.hostname.endsWith("github.io")
+        ? "Upload marking needs a reachable backend. On this GitHub Pages link, start your local bridge on this computer or deploy the bridge API, then upload again."
+        : "The local autograder bridge is offline. Start it, then upload again.";
+      renderMarkingResult(`<p class="hub-copy">${escapeHtml(message)}</p>`);
       return;
     }
 
@@ -2110,6 +2192,9 @@
         answerFormat: "Worksheet upload",
         markScheme: state.currentPack.worksheet.rubricText,
         rubric: state.currentPack.worksheet.rubricText,
+        preferredProvider: "gemini",
+        preferredModel: "gemini-2.5-flash",
+        thinkingBudget: -1,
         uploadedFile
       };
 
@@ -2132,6 +2217,7 @@
       renderMarkingResult(`
         <div class="marking-summary">
           <h3>Marked successfully</h3>
+          <p><strong>Provider:</strong> ${escapeHtml(result.provider || "Gemini")} ${result.model ? `(${escapeHtml(result.model)})` : ""}</p>
           <p><strong>Score:</strong> ${escapeHtml(String(result.score || 0))} / ${escapeHtml(String(result.maxScore || 0))}</p>
           <p>${escapeHtml(result.feedback || "No feedback returned.")}</p>
           ${fixPoints}
