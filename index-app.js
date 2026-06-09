@@ -275,6 +275,24 @@
     window.localStorage.setItem(CACHE_STORE_KEY, JSON.stringify(store));
   }
 
+  function subjectsForSelection(syllabus, level) {
+    const catalog = state.catalog || CATALOG;
+    const syllabusEntry = catalog[safeText(syllabus)];
+    if (!syllabusEntry || typeof syllabusEntry !== "object" || !syllabusEntry.levels) {
+      return [];
+    }
+    const exactSubjects = syllabusEntry.levels[safeText(level)];
+    if (Array.isArray(exactSubjects) && exactSubjects.length) {
+      return unique(exactSubjects.map(safeText).filter(Boolean));
+    }
+    const firstDefinedSubjects = Object.values(syllabusEntry.levels).find(
+      (items) => Array.isArray(items) && items.length
+    );
+    return Array.isArray(firstDefinedSubjects)
+      ? unique(firstDefinedSubjects.map(safeText).filter(Boolean))
+      : [];
+  }
+
   function defaultRequest() {
     if (TRIAL_BIOLOGY_14) {
       return {
@@ -295,10 +313,14 @@
         topicIds: ["14"]
       };
     }
+    const catalog = state.catalog || CATALOG;
+    const syllabus = Object.keys(catalog)[0] || "Cambridge IGCSE";
+    const level = Object.keys(catalog[syllabus]?.levels || { Standard: [] })[0] || "IGCSE";
+    const subjects = subjectsForSelection(syllabus, level);
     return {
-      syllabus: Object.keys(state.catalog || CATALOG)[0] || "Cambridge IGCSE",
-      level: Object.keys((state.catalog || CATALOG)["Cambridge IGCSE"]?.levels || { IGCSE: [] })[0] || "IGCSE",
-      topic: "Biology",
+      syllabus,
+      level,
+      topic: subjects.includes("Biology") ? "Biology" : subjects[0] || "",
       chapterIds: ["14"],
       chapterId: "14",
       chapterTitle: "Coordination and response",
@@ -647,21 +669,26 @@
   function syncTopicOptions(preferredTopic) {
     const syllabus = safeText(elements.syllabusSelect.value || defaultRequest().syllabus);
     const level = safeText(elements.levelSelect.value);
-    const catalogSubjects = state.catalog?.[syllabus]?.levels?.[level] || [];
-    const fallbackSubjects = CATALOG[syllabus]?.levels?.[level] || CATALOG["Cambridge IGCSE"]?.levels?.IGCSE || [];
-    const subjects = unique(
-      catalogSubjects.length
-        ? catalogSubjects
-        : fallbackSubjects.length
-          ? fallbackSubjects
-          : state.syllabusSubjectOrder
-    );
+    const subjects = subjectsForSelection(syllabus, level);
+    if (!subjects.length) {
+      fillSelectOptions(elements.topicSelect, [
+        {
+          value: "",
+          label: "No subjects found for this syllabus"
+        }
+      ]);
+      syncChapterOptions();
+      return;
+    }
     fillSelect(elements.topicSelect, subjects);
+    const currentTopic = safeText(elements.topicSelect.value);
     if (preferredTopic && subjects.includes(preferredTopic)) {
       elements.topicSelect.value = preferredTopic;
+    } else if (subjects.includes(currentTopic)) {
+      elements.topicSelect.value = currentTopic;
     } else if (subjects.includes("Biology")) {
       elements.topicSelect.value = "Biology";
-    } else if (!subjects.includes(elements.topicSelect.value) && subjects.length) {
+    } else {
       elements.topicSelect.value = subjects[0];
     }
     syncChapterOptions();
