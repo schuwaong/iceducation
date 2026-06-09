@@ -17,6 +17,7 @@
     }
     return "http://127.0.0.1:8001";
   })();
+  const BUNDLED_SNAPSHOT = window.IC_EDUCATE_SNAPSHOT || null;
 
   const CATALOG = {
     "Cambridge IGCSE": {
@@ -77,6 +78,8 @@
     aiGenerationReady: false,
     uploadMarkingReady: false,
     catalog: CATALOG,
+    catalogStats: null,
+    librarySummary: BUNDLED_SNAPSHOT?.library || null,
     syllabusSubjectOrder: Object.keys(FALLBACK_SYLLABUS_TOPICS),
     syllabusTopicsBySubject: { ...FALLBACK_SYLLABUS_TOPICS },
     syllabusTopicsByKey: {},
@@ -92,6 +95,7 @@
     topicSelect: document.getElementById("topicSelect"),
     chapterSelect: document.getElementById("chapterSelect"),
     subtopicSelect: document.getElementById("subtopicSelect"),
+    syllabusCoverageHint: document.getElementById("syllabusCoverageHint"),
     learningTargetSelect: document.getElementById("learningTargetSelect"),
     paceSelect: document.getElementById("paceSelect"),
     worksheetLengthSelect: document.getElementById("worksheetLengthSelect"),
@@ -273,6 +277,103 @@
 
   function saveCacheStore(store) {
     window.localStorage.setItem(CACHE_STORE_KEY, JSON.stringify(store));
+  }
+
+  function bundledSnapshotSyllabi() {
+    return Array.isArray(BUNDLED_SNAPSHOT?.catalog?.syllabi) ? BUNDLED_SNAPSHOT.catalog.syllabi : [];
+  }
+
+  function hasBundledSnapshot() {
+    return bundledSnapshotSyllabi().length > 0;
+  }
+
+  function normalizeTopicPacks(topicPacks) {
+    return Array.isArray(topicPacks)
+      ? topicPacks
+          .map((pack) => ({
+            id: safeText(pack.id),
+            title: safeText(pack.title),
+            source: safeText(pack.source),
+            subtopics: Array.isArray(pack.subtopics)
+              ? pack.subtopics
+                  .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
+                  .filter((subtopic) => subtopic.id && subtopic.title)
+              : []
+          }))
+          .filter((pack) => pack.id || pack.title)
+      : [];
+  }
+
+  function buildCatalogStateFromSyllabi(syllabi) {
+    const nextCatalog = syllabi.length ? {} : { ...CATALOG };
+    const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
+    const nextTopicsByKey = {};
+    const nextSubjects = [];
+    let topicPackCount = 0;
+    let subtopicCount = 0;
+
+    syllabi.forEach((syllabusItem) => {
+      const syllabusName = safeText(syllabusItem.name);
+      const subjects = Array.isArray(syllabusItem.subjects) ? syllabusItem.subjects : [];
+      const subjectLabels = [];
+      subjects.forEach((item) => {
+        const label = safeText(item.label || item.value);
+        if (!label) {
+          return;
+        }
+        subjectLabels.push(label);
+        nextSubjects.push(label);
+        const packs = normalizeTopicPacks(item.topicPacks);
+        topicPackCount += packs.length;
+        subtopicCount += packs.reduce((total, pack) => total + pack.subtopics.length, 0);
+        if (syllabusName) {
+          nextTopicsByKey[`${syllabusName}::${label}`] = packs;
+        }
+        if (!nextTopicsBySubject[label]) {
+          nextTopicsBySubject[label] = packs;
+        }
+      });
+      if (syllabusName) {
+        const levels = Array.isArray(syllabusItem.levels) && syllabusItem.levels.length ? syllabusItem.levels : ["Standard"];
+        nextCatalog[syllabusName] = {
+          levels: Object.fromEntries(levels.map((level) => [safeText(level), unique(subjectLabels)]))
+        };
+      }
+    });
+
+    return {
+      catalog: nextCatalog,
+      syllabusSubjectOrder: unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]),
+      syllabusTopicsBySubject: nextTopicsBySubject,
+      syllabusTopicsByKey: nextTopicsByKey,
+      catalogStats: {
+        syllabusCount: Object.keys(nextCatalog).length,
+        subjectCount: unique(nextSubjects).length,
+        topicPackCount,
+        subtopicCount
+      }
+    };
+  }
+
+  function applyCatalogState(catalogState) {
+    if (!catalogState) {
+      return;
+    }
+    state.catalog = catalogState.catalog || { ...CATALOG };
+    state.catalogStats = catalogState.catalogStats || null;
+    state.syllabusSubjectOrder = catalogState.syllabusSubjectOrder || Object.keys(FALLBACK_SYLLABUS_TOPICS);
+    state.syllabusTopicsBySubject = catalogState.syllabusTopicsBySubject || { ...FALLBACK_SYLLABUS_TOPICS };
+    state.syllabusTopicsByKey = catalogState.syllabusTopicsByKey || {};
+  }
+
+  function applyBundledSnapshot() {
+    if (!hasBundledSnapshot()) {
+      return false;
+    }
+    applyCatalogState(buildCatalogStateFromSyllabi(bundledSnapshotSyllabi()));
+    state.catalogStats = BUNDLED_SNAPSHOT?.stats || state.catalogStats;
+    state.librarySummary = BUNDLED_SNAPSHOT?.library || state.librarySummary;
+    return true;
   }
 
   function subjectsForSelection(syllabus, level) {
@@ -467,6 +568,101 @@
     });
   }
 
+  function topicPackNeedsWebLookup(pack) {
+    const title = normalizeToken(pack?.title);
+    const source = normalizeToken(pack?.source);
+    const subtopics = Array.isArray(pack?.subtopics) ? pack.subtopics : [];
+    const onlySubtopic = subtopics[0] || {};
+    const onlyTitle = normalizeToken(onlySubtopic.title);
+    const onlyId = normalizeToken(onlySubtopic.id);
+    if (!subtopics.length) {
+      return true;
+    }
+    if (title === "readme" || title === "overview" || title.includes("curriculum outline")) {
+      return true;
+    }
+    return subtopics.length === 1 && (
+      onlyId === "all"
+      || onlyTitle === "readme"
+      || (source.startsWith("studioprime") && (onlyTitle.startsWith("all ") || title === onlyTitle))
+    );
+  }
+
+  function countSelectedCoverageSubtopics() {
+    const seen = new Set();
+    selectedSyllabusCoverage().forEach((item) => {
+      const chapterKey = normalizeToken(item.chapterId || item.chapterTitle || "selected-topic");
+      if (safeText(item.subtopicId) === WHOLE_CHAPTER_VALUE) {
+        (item.subtopics || []).forEach((subtopic) => {
+          const subtopicKey = normalizeToken(subtopic);
+          if (subtopicKey) {
+            seen.add(`${chapterKey}:${subtopicKey}`);
+          }
+        });
+        return;
+      }
+      const label = `${safeText(item.subtopicId)} ${safeText(item.subtopicTitle)}`.trim();
+      const subtopicKey = normalizeToken(label);
+      if (subtopicKey) {
+        seen.add(`${chapterKey}:${subtopicKey}`);
+      }
+    });
+    return seen.size;
+  }
+
+  function currentSubjectCoverageMeta() {
+    const syllabus = safeText(elements.syllabusSelect?.value);
+    const subject = safeText(elements.topicSelect?.value);
+    const topicPacks = topicsForSubject(subject);
+    const placeholderPacks = topicPacks.filter(topicPackNeedsWebLookup);
+    const structuredPacks = topicPacks.filter((pack) => !topicPackNeedsWebLookup(pack));
+    const totalSubtopics = topicPacks.reduce((total, pack) => total + (Array.isArray(pack.subtopics) ? pack.subtopics.length : 0), 0);
+    const structuredSubtopics = structuredPacks.reduce((total, pack) => total + (Array.isArray(pack.subtopics) ? pack.subtopics.length : 0), 0);
+    return {
+      syllabus,
+      subject,
+      topicPackCount: topicPacks.length,
+      totalSubtopics,
+      structuredPackCount: structuredPacks.length,
+      structuredSubtopics,
+      placeholderPackCount: placeholderPacks.length,
+      needsWebLookup: topicPacks.length > 0 && structuredPacks.length === 0,
+      selectedSubtopicCount: countSelectedCoverageSubtopics()
+    };
+  }
+
+  function updateSyllabusCoverageHint() {
+    if (!elements.syllabusCoverageHint) {
+      return;
+    }
+    const meta = currentSubjectCoverageMeta();
+    if (!meta.subject) {
+      elements.syllabusCoverageHint.textContent = "Select a subject to load the bundled syllabus map.";
+      return;
+    }
+    if (!meta.topicPackCount) {
+      elements.syllabusCoverageHint.textContent = hasBundledSnapshot()
+        ? `No bundled syllabus topics were found for ${meta.syllabus} ${meta.subject} on the public site yet.`
+        : "Start the local bridge to load the full syllabus library.";
+      return;
+    }
+    if (meta.syllabus === "IB Diploma" && meta.needsWebLookup) {
+      elements.syllabusCoverageHint.textContent = `IB ${meta.subject} is only mapped as a broad library placeholder on the public site right now. The snapshot has ${meta.topicPackCount} library document${meta.topicPackCount === 1 ? "" : "s"}, but no real chapter/subtopic breakdown yet, so 1 official web syllabus lookup is still needed for this subject.`;
+      return;
+    }
+    if (meta.needsWebLookup) {
+      elements.syllabusCoverageHint.textContent = `${meta.syllabus} ${meta.subject} is using ${meta.topicPackCount} broad library placeholder${meta.topicPackCount === 1 ? "" : "s"} on the public site. A proper web or manual syllabus map is still needed before the dropdown can show detailed subtopics.`;
+      return;
+    }
+    const selectionNote = meta.selectedSubtopicCount
+      ? ` You currently selected ${meta.selectedSubtopicCount} subtopic${meta.selectedSubtopicCount === 1 ? "" : "s"}.`
+      : "";
+    const placeholderNote = meta.placeholderPackCount
+      ? ` ${meta.placeholderPackCount} broad library pack${meta.placeholderPackCount === 1 ? "" : "s"} still need extra syllabus mapping.`
+      : "";
+    elements.syllabusCoverageHint.textContent = `Bundled library snapshot loaded: ${meta.structuredPackCount} structured topic pack${meta.structuredPackCount === 1 ? "" : "s"} and ${meta.structuredSubtopics} subtopic${meta.structuredSubtopics === 1 ? "" : "s"} for ${meta.syllabus} ${meta.subject}.${selectionNote}${placeholderNote}`;
+  }
+
   function chapterSummary(chapters = selectedChapters()) {
     const labels = chapters.map(chapterLabel).filter(Boolean);
     if (!labels.length) {
@@ -544,7 +740,11 @@
       fillSelectOptions(elements.chapterSelect, [
         {
           value: "",
-          label: state.bridgeOnline ? "No syllabus topics found" : "Start the local bridge to load syllabus topics"
+          label: state.bridgeOnline
+            ? "No syllabus topics found"
+            : hasBundledSnapshot()
+              ? "No bundled syllabus topics found"
+              : "Start the local bridge to load syllabus topics"
         }
       ]);
       syncSubtopicOptions();
@@ -621,6 +821,7 @@
     if (!coverage.length) {
       fillSelectOptions(elements.learningTargetSelect, [{ value: "", label: "Select a topic first" }]);
       state.selectedTopicIds = [];
+      updateSyllabusCoverageHint();
       return;
     }
 
@@ -647,6 +848,7 @@
       selectedAny = setSelectedValues(elements.learningTargetSelect, [options[0]?.value]);
     }
     syncInternalTopicSelection();
+    updateSyllabusCoverageHint();
   }
 
   function syncSubtopicFromLearningTarget() {
@@ -678,6 +880,7 @@
         }
       ]);
       syncChapterOptions();
+      updateSyllabusCoverageHint();
       return;
     }
     fillSelect(elements.topicSelect, subjects);
@@ -885,75 +1088,30 @@
       }
       const payload = await response.json();
       const syllabi = Array.isArray(payload?.catalog?.syllabi) ? payload.catalog.syllabi : [];
-      const nextCatalog = syllabi.length ? {} : { ...CATALOG };
-      const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
-      const nextTopicsByKey = {};
-      const nextSubjects = [];
-      syllabi.forEach((syllabusItem) => {
-        const syllabusName = safeText(syllabusItem.name);
-        const subjects = Array.isArray(syllabusItem.subjects) ? syllabusItem.subjects : [];
-        const subjectLabels = [];
-        subjects.forEach((item) => {
-          const label = safeText(item.label || item.value);
-          if (!label) {
-            return;
-          }
-          subjectLabels.push(label);
-          nextSubjects.push(label);
-          const packs = Array.isArray(item.topicPacks)
-            ? item.topicPacks
-                .map((pack) => ({
-                  id: safeText(pack.id),
-                  title: safeText(pack.title),
-                  subtopics: Array.isArray(pack.subtopics)
-                    ? pack.subtopics
-                        .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
-                        .filter((subtopic) => subtopic.id && subtopic.title)
-                    : []
-                }))
-                .filter((pack) => pack.id && pack.title)
-            : [];
-          if (syllabusName) {
-            nextTopicsByKey[`${syllabusName}::${label}`] = packs;
-          }
-          if (!nextTopicsBySubject[label]) {
-            nextTopicsBySubject[label] = packs;
-          }
-        });
-        if (syllabusName) {
-          const levels = Array.isArray(syllabusItem.levels) && syllabusItem.levels.length ? syllabusItem.levels : ["Standard"];
-          nextCatalog[syllabusName] = {
-            levels: Object.fromEntries(levels.map((level) => [safeText(level), subjectLabels]))
-          };
-        }
-      });
+      if (syllabi.length) {
+        applyCatalogState(buildCatalogStateFromSyllabi(syllabi));
+      }
       if (!syllabi.length) {
         const subjects = payload?.topical?.subjects || [];
+        const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
+        const nextSubjects = [];
         subjects.forEach((item) => {
           const label = safeText(item.label || item.value);
           if (!label) {
             return;
           }
           nextSubjects.push(label);
-          nextTopicsBySubject[label] = Array.isArray(item.topicPacks)
-            ? item.topicPacks
-                .map((pack) => ({
-                  id: safeText(pack.id),
-                  title: safeText(pack.title),
-                  subtopics: Array.isArray(pack.subtopics)
-                    ? pack.subtopics
-                        .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
-                        .filter((subtopic) => subtopic.id && subtopic.title)
-                    : []
-                }))
-                .filter((pack) => pack.id && pack.title)
-            : [];
+          nextTopicsBySubject[label] = normalizeTopicPacks(item.topicPacks);
+        });
+        applyCatalogState({
+          catalog: { ...CATALOG },
+          catalogStats: state.catalogStats,
+          syllabusSubjectOrder: unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]),
+          syllabusTopicsBySubject: nextTopicsBySubject,
+          syllabusTopicsByKey: {}
         });
       }
-      state.catalog = nextCatalog;
-      state.syllabusSubjectOrder = unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]);
-      state.syllabusTopicsBySubject = nextTopicsBySubject;
-      state.syllabusTopicsByKey = nextTopicsByKey;
+      state.librarySummary = payload?.library || state.librarySummary;
       fillSelect(elements.syllabusSelect, Object.keys(state.catalog));
       if (Object.keys(state.catalog).includes(request.syllabus)) {
         elements.syllabusSelect.value = request.syllabus;
@@ -1585,12 +1743,29 @@
       state.aiGenerationReady = false;
       state.uploadMarkingReady = false;
       const publicSite = window.location.hostname.endsWith("github.io");
+      const usingBundledSnapshot = applyBundledSnapshot();
+      const libraryCount = Number(state.librarySummary?.count) || 0;
+      const snapshotStats = state.catalogStats || {};
       setBridgeStatus(
         false,
-        publicSite
-          ? "Upload marking needs the local bridge or a deployed API backend; this public page cannot reach your private computer automatically."
-          : "Autograder offline. Start the local bridge to enable upload marking."
+        usingBundledSnapshot
+          ? `Using bundled library snapshot: ${snapshotStats.syllabusCount || 0} syllabi, ${snapshotStats.subjectCount || 0} subjects, ${snapshotStats.topicPackCount || 0} topic packs${libraryCount ? ` from ${libraryCount.toLocaleString()} library files` : ""}. Upload marking still needs the local bridge or a deployed API backend.`
+          : publicSite
+            ? "Upload marking needs the local bridge or a deployed API backend; this public page cannot reach your private computer automatically."
+            : "Autograder offline. Start the local bridge to enable upload marking."
       );
+      if (usingBundledSnapshot) {
+        const request = readRequestFromForm();
+        fillSelect(elements.syllabusSelect, Object.keys(state.catalog));
+        if (Object.keys(state.catalog).includes(request.syllabus)) {
+          elements.syllabusSelect.value = request.syllabus;
+        }
+        syncLevelOptions(request.level);
+        syncTopicOptions(request.topic);
+        syncChapterOptions(request.chapterIds || request.chapterId);
+        syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+        syncLearningTargetOptions(request.learningTargets || request.learningTarget);
+      }
       state.topicalOptions = [];
       renderOfficialTopicChoices();
     }
@@ -2354,8 +2529,9 @@
   }
 
   function initializeForm() {
+    applyBundledSnapshot();
     const request = defaultRequest();
-    fillSelect(elements.syllabusSelect, Object.keys(CATALOG));
+    fillSelect(elements.syllabusSelect, Object.keys(state.catalog || CATALOG));
     elements.syllabusSelect.value = request.syllabus;
     syncLevelOptions(request.level);
     syncTopicOptions(request.topic);

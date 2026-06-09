@@ -853,6 +853,12 @@ button:focus-visible,
   gap: 8px;
 }
 
+.hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
 .field span {
   font-size: 0.9rem;
   color: var(--ink);
