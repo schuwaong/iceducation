@@ -3,139 +3,294 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CFA Levels</title>
+  <title>IC Education Study Builder</title>
+  <meta
+    name="description"
+    content="Create a simple cached study site with notes, quiz lanes, and worksheet marking."
+  >
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
-  <div class="shell level-shell">
-    <main class="level-hub">
-      <section class="hub-hero">
-        <p class="eyebrow">ICEducation</p>
-        <h1>Generate a study site from what a student wants to learn</h1>
-        <p class="hub-copy">Use the builder below for a custom subject, or open the ready-made CFA levels.</p>
-      </section>
-
-      <section class="generator-shell">
-        <div class="generator-copy">
-          <p class="eyebrow">Course Builder</p>
-          <h2>Student prompt in, study site out</h2>
+<body class="study-builder-page">
+  <div class="study-shell">
+    <main class="study-app">
+      <section class="study-hero">
+        <div class="study-hero-copy">
+          <p class="eyebrow">IC Education</p>
+          <h1>Simple study site builder</h1>
           <p class="hub-copy">
-            Enter the subject, goal, focus areas, and quiz style. The site will generate
-            notes, a study sequence, and replay-based practice in the same coach layout.
+            Pick the syllabus, level, and topic. Generate one clean learning pack with notes,
+            quiz lanes, and a worksheet that stays cached for the next visit.
           </p>
         </div>
+        <div class="study-hero-status">
+          <span class="study-pill" id="cacheStatus">No study pack loaded</span>
+          <span class="study-pill ghost" id="bridgeStatus">Checking autograder...</span>
+        </div>
+      </section>
 
-        <form class="generator-form" id="generator-form">
+      <section class="study-builder-card">
+        <div class="study-card-head">
+          <div>
+            <p class="eyebrow">Builder</p>
+            <h2>Describe what the student should learn</h2>
+          </div>
+        </div>
+
+        <form id="studyForm" class="study-form">
+          <div class="study-grid">
+            <label class="field">
+              <span>Syllabus</span>
+              <select id="syllabusSelect" required></select>
+            </label>
+
+            <label class="field">
+              <span>Level</span>
+              <select id="levelSelect" required></select>
+            </label>
+
+            <label class="field">
+              <span>Topic</span>
+              <select id="topicSelect" required></select>
+            </label>
+          </div>
+
+          <div class="study-grid compact">
+            <label class="field">
+              <span>Difficulty lane style</span>
+              <select id="paceSelect">
+                <option value="guided">Guided</option>
+                <option value="balanced" selected>Balanced</option>
+                <option value="fast">Fast-track</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Worksheet size</span>
+              <select id="worksheetLengthSelect">
+                <option value="8">8 questions</option>
+                <option value="12" selected>12 questions</option>
+                <option value="16">16 questions</option>
+              </select>
+            </label>
+          </div>
+
           <label class="field">
             <span>What should the student learn?</span>
-            <input id="subject-input" name="subject" type="text" value="GCSE Biology" required>
+            <textarea
+              id="goalInput"
+              rows="4"
+              placeholder="Example: explain how market efficiency affects active management, show the key formulas, and give exam-style traps to avoid."
+              required
+            ></textarea>
           </label>
 
           <label class="field">
-            <span>Goal</span>
-            <input id="goal-input" name="goal" type="text" value="Master cell biology, genetics, and core exam questions" required>
+            <span>Optional syllabus lines, subtopics, or weak areas</span>
+            <textarea
+              id="focusInput"
+              rows="4"
+              placeholder="Example: weak on semi-strong form, event studies, and how anomalies affect alpha."
+            ></textarea>
           </label>
 
-          <label class="field">
-            <span>Focus areas</span>
-            <textarea id="focus-input" name="focusAreas" rows="5">Cell structure
-Photosynthesis and respiration
-DNA, genes, and inheritance
-Required practicals
-Common exam traps and definitions</textarea>
-          </label>
-
-          <div class="field-row">
-            <label class="field">
-              <span>Learner level</span>
-              <select id="learner-level" name="learnerLevel">
-                <option value="beginner">Beginner</option>
-                <option value="intermediate" selected>Intermediate</option>
-                <option value="advanced">Advanced</option>
-              </select>
-            </label>
-
-            <label class="field">
-              <span>Quiz style</span>
-              <select id="quiz-style" name="quizStyle">
-                <option value="standalone" selected>Standalone 3-choice</option>
-                <option value="case">Short case sets</option>
-              </select>
-            </label>
+          <div id="recommendationWrap" class="field recommendation-wrap" hidden>
+            <div class="recommendation-head">
+              <span>Suggested from your library</span>
+              <button class="ghost-inline-button" id="useRecommendationsButton" type="button">Use these weak areas</button>
+            </div>
+            <p class="hint" id="recommendationHint">
+              The script searched your local library and found related areas to focus on.
+            </p>
+            <div id="recommendationChips" class="recommendation-chips"></div>
           </div>
 
-          <div class="field-row">
-            <label class="field">
-              <span>Modules</span>
-              <input id="module-count" name="moduleCount" type="number" min="3" max="8" value="6">
-            </label>
-
-            <label class="field">
-              <span>Questions per module</span>
-              <input id="question-count" name="questionsPerModule" type="number" min="4" max="20" value="8">
-            </label>
+          <div id="officialTopicWrap" class="field" hidden>
+            <span>Official IGCSE topical worksheet topics</span>
+            <div id="officialTopicChoices" class="topic-choice-grid"></div>
+            <small class="hint">
+              When supported by the local IGCSE topical generator, the worksheet PDF will be built from only these selected official topics.
+            </small>
           </div>
 
-          <label class="field">
-            <span>Extra notes or syllabus lines</span>
-            <textarea id="source-input" name="sourceText" rows="4">Exam command words
-Worked examples
-Weekly revision structure</textarea>
-          </label>
-
-          <div class="generator-actions">
-            <button class="primary-button" type="submit">Generate Study Site</button>
-            <a class="ghost-button link-button" href="coach.html?level=custom">Open Last Custom Site</a>
+          <div class="study-actions">
+            <button class="primary-button" id="generateButton" type="submit">Generate study pack</button>
+            <button class="ghost-button" id="clearCacheButton" type="button">Clear cache</button>
           </div>
         </form>
       </section>
 
-      <section class="level-grid" aria-label="CFA levels">
-        <a class="level-card" href="coach.html?level=level1">
-          <p class="level-label">Level I</p>
-          <h2>Foundation build</h2>
-          <p>Core topic notes, 3-choice practice, and question years shown on each card.</p>
-        </a>
+      <section id="studyWorkspace" class="study-workspace" hidden>
+        <div class="workspace-summary">
+          <div>
+            <p class="eyebrow">Current Pack</p>
+            <h2 id="packTitle">Study pack</h2>
+            <p class="hub-copy" id="packSubtitle">Generate a pack to begin.</p>
+          </div>
+          <div class="summary-metrics">
+            <article class="summary-card">
+              <span>Notes cards</span>
+              <strong id="notesCount">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Quiz questions</span>
+              <strong id="questionCount">0</strong>
+            </article>
+            <article class="summary-card">
+              <span>Worksheet</span>
+              <strong id="worksheetCount">0</strong>
+            </article>
+          </div>
+        </div>
 
-        <a class="level-card" href="coach.html?level=level2">
-          <p class="level-label">Level II</p>
-          <h2>Item-set training</h2>
-          <p>Chapter notes, vignette-style practice, replay review, and expanded question sets.</p>
-        </a>
+        <div class="study-tabs" role="tablist" aria-label="Study pack tabs">
+          <button class="study-tab active" type="button" data-tab="notes" aria-selected="true">Notes</button>
+          <button class="study-tab" type="button" data-tab="quiz" aria-selected="false">Quiz</button>
+          <button class="study-tab" type="button" data-tab="worksheet" aria-selected="false">Worksheet</button>
+        </div>
 
-        <article class="level-card locked-level" aria-disabled="true">
-          <p class="level-label">Level III</p>
-          <h2>Locked for now</h2>
-          <p>This lane will open when the Level III tutor is built.</p>
-        </article>
+        <section class="study-panel" id="notesPanel" role="tabpanel">
+          <div class="notes-layout">
+            <article class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Core Notes</p>
+                  <h3>Important points first</h3>
+                </div>
+                <span class="study-pill soft" id="packMeta">Generated</span>
+              </div>
+              <ul class="point-list" id="importantPoints"></ul>
+            </article>
+
+            <article class="panel-card diagram-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Visual Explainer</p>
+                  <h3>Simple concept map</h3>
+                </div>
+              </div>
+              <div id="diagramMount" class="diagram-mount"></div>
+            </article>
+          </div>
+
+          <div class="note-card-grid" id="noteCards"></div>
+        </section>
+
+        <section class="study-panel" id="quizPanel" role="tabpanel" hidden>
+          <div class="quiz-shell">
+            <div class="lane-switch" role="tablist" aria-label="Quiz difficulty lanes">
+              <button class="lane-pill active" type="button" data-lane="Foundation">Foundation</button>
+              <button class="lane-pill" type="button" data-lane="Core">Core</button>
+              <button class="lane-pill" type="button" data-lane="Stretch">Stretch</button>
+            </div>
+
+            <div class="quiz-metrics">
+              <article class="summary-card">
+                <span>Correct</span>
+                <strong id="quizCorrectCount">0</strong>
+              </article>
+              <article class="summary-card">
+                <span>Missed</span>
+                <strong id="quizMissedCount">0</strong>
+              </article>
+              <article class="summary-card">
+                <span>Replay queue</span>
+                <strong id="quizReplayCount">0</strong>
+              </article>
+            </div>
+
+            <article class="panel-card quiz-card-main">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow" id="quizLaneLabel">Foundation lane</p>
+                  <h3 id="quizPrompt">Generate a study pack to begin the quiz lane.</h3>
+                </div>
+                <span class="study-pill soft" id="quizPosition">0 / 0</span>
+              </div>
+              <p class="hub-copy" id="quizConcept">
+                Wrong answers are replayed until the lane is clean.
+              </p>
+              <div class="answer-grid simple-answer-grid" id="quizAnswers"></div>
+              <div class="feedback-panel" id="quizFeedback" hidden>
+                <p class="feedback-title" id="quizFeedbackTitle"></p>
+                <p class="feedback-body" id="quizFeedbackBody"></p>
+              </div>
+              <div class="study-actions compact-actions">
+                <button class="ghost-button" id="resetLaneButton" type="button">Reset lane</button>
+                <button class="primary-button" id="nextQuestionButton" type="button" disabled>Continue</button>
+              </div>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Review Queue</p>
+                  <h3>Questions that will come back</h3>
+                </div>
+              </div>
+              <ul class="point-list" id="replayQueueList">
+                <li>No repeats waiting yet.</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section class="study-panel" id="worksheetPanel" role="tabpanel" hidden>
+          <div class="worksheet-layout">
+            <article class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Worksheet Builder</p>
+                  <h3>Printable extra practice</h3>
+                </div>
+                <span class="study-pill soft" id="worksheetMeta">PDF-ready</span>
+              </div>
+              <p class="hub-copy" id="worksheetIntro">
+                Generate a worksheet PDF from the current study pack, or open a clean print layout.
+              </p>
+              <div class="study-actions compact-actions">
+                <button class="primary-button" id="downloadWorksheetButton" type="button">Download worksheet PDF</button>
+                <button class="ghost-button" id="printWorksheetButton" type="button">Open print view</button>
+                <button class="ghost-button" id="downloadAnswerKeyButton" type="button">Download answer key</button>
+              </div>
+              <ol class="worksheet-preview" id="worksheetPreview"></ol>
+              <div id="worksheetScriptWrap" class="script-wrap" hidden>
+                <p class="eyebrow">PDF Generator Script</p>
+                <p class="hub-copy" id="worksheetScriptNote">The local Python script used for this worksheet will appear here.</p>
+                <pre class="script-block" id="worksheetScriptCommand"></pre>
+              </div>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Upload For Marking</p>
+                  <h3>Send the completed PDF to the autograder</h3>
+                </div>
+              </div>
+              <label class="field">
+                <span>Completed worksheet PDF or image</span>
+                <input id="worksheetUpload" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.doc,.docx">
+              </label>
+              <p class="hub-copy">
+                If the local autograder bridge is running, the upload will be checked against the generated answer key.
+              </p>
+              <div class="study-actions compact-actions">
+                <button class="primary-button" id="markWorksheetButton" type="button">Upload and mark</button>
+              </div>
+              <div class="marking-result" id="markingResult">
+                <p class="hub-copy">No marking result yet.</p>
+              </div>
+            </article>
+          </div>
+        </section>
       </section>
     </main>
   </div>
 
   <script src="generator-core.js"></script>
-  <script>
-    const form = document.getElementById("generator-form");
-
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const payload = {
-        subject: document.getElementById("subject-input").value,
-        goal: document.getElementById("goal-input").value,
-        focusAreas: document.getElementById("focus-input").value,
-        learnerLevel: document.getElementById("learner-level").value,
-        quizStyle: document.getElementById("quiz-style").value,
-        moduleCount: document.getElementById("module-count").value,
-        questionsPerModule: document.getElementById("question-count").value,
-        sourceText: document.getElementById("source-input").value
-      };
-
-      const course = window.ICECourseGenerator.buildCourse(payload);
-      window.ICECourseGenerator.saveCourse(course);
-      window.location.href = window.ICECourseGenerator.buildShareUrl(course.request, window.location.href);
-    });
-  </script>
+  <script src="index-app.js"></script>
 </body>
 </html>
