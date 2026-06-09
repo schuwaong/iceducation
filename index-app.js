@@ -1,6 +1,6 @@
 (function () {
-  const CACHE_STORE_KEY = "ice-study-pack-cache-v3";
-  const LAST_PACK_KEY = "ice-study-pack-last-v3";
+  const CACHE_STORE_KEY = "ice-study-pack-cache-v4";
+  const LAST_PACK_KEY = "ice-study-pack-last-v4";
   const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
   const TRIAL_QUERY = new URLSearchParams(window.location.search);
   const TRIAL_BIOLOGY_14 = TRIAL_QUERY.get("trial") === "bio14";
@@ -244,6 +244,22 @@
     });
   }
 
+  function selectedValues(select) {
+    return Array.from(select.selectedOptions || [])
+      .map((option) => safeText(option.value))
+      .filter(Boolean);
+  }
+
+  function setSelectedValues(select, values) {
+    const wanted = new Set((Array.isArray(values) ? values : [values]).map((item) => safeText(item)).filter(Boolean));
+    let selectedAny = false;
+    Array.from(select.options || []).forEach((option) => {
+      option.selected = wanted.has(option.value);
+      selectedAny = selectedAny || option.selected;
+    });
+    return selectedAny;
+  }
+
   function loadCacheStore() {
     try {
       return JSON.parse(window.localStorage.getItem(CACHE_STORE_KEY) || "{}");
@@ -262,9 +278,11 @@
         syllabus: "Cambridge IGCSE",
         level: "IGCSE",
         topic: "Biology",
+        chapterIds: ["14"],
         chapterId: "14",
         chapterTitle: "Coordination and response",
-        subtopicId: WHOLE_CHAPTER_VALUE,
+        subtopicIds: [`${WHOLE_CHAPTER_VALUE}:14`],
+        subtopicId: `${WHOLE_CHAPTER_VALUE}:14`,
         subtopic: "All Chapter 14 subtopics",
         learningTarget: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
         goal: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
@@ -278,9 +296,11 @@
       syllabus: Object.keys(CATALOG)[0],
       level: Object.keys(CATALOG["Cambridge IGCSE"].levels)[0],
       topic: "Biology",
+      chapterIds: ["14"],
       chapterId: "14",
       chapterTitle: "Coordination and response",
-      subtopicId: WHOLE_CHAPTER_VALUE,
+      subtopicIds: [`${WHOLE_CHAPTER_VALUE}:14`],
+      subtopicId: `${WHOLE_CHAPTER_VALUE}:14`,
       subtopic: "All Chapter 14 subtopics",
       learningTarget: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
       goal: "",
@@ -296,8 +316,10 @@
       request.syllabus,
       request.level,
       request.topic,
+      (request.chapterIds || []).join(","),
       request.chapterId,
       request.chapterTitle,
+      (request.subtopicIds || []).join(","),
       request.subtopicId,
       request.subtopic,
       request.learningTarget,
@@ -318,6 +340,12 @@
     return id && title ? `${id}. ${title}` : title || id || "Selected topic";
   }
 
+  function coverageChapterLabel(item) {
+    const id = safeText(item?.chapterId || item?.id);
+    const title = safeText(item?.chapterTitle || item?.title);
+    return id && title ? `${id}. ${title}` : title || id || "Selected topic";
+  }
+
   function subtopicLabel(subtopic) {
     const id = safeText(subtopic?.id);
     const title = safeText(subtopic?.title);
@@ -332,17 +360,114 @@
 
   function currentChapter() {
     const subject = safeText(elements.topicSelect.value);
-    const id = safeText(elements.chapterSelect.value);
+    const id = selectedValues(elements.chapterSelect)[0] || safeText(elements.chapterSelect.value);
     return topicsForSubject(subject).find((chapter) => safeText(chapter.id) === id) || null;
   }
 
+  function selectedChapters() {
+    const subject = safeText(elements.topicSelect.value);
+    const chapters = topicsForSubject(subject);
+    const ids = selectedValues(elements.chapterSelect);
+    const selected = chapters.filter((chapter) => ids.includes(safeText(chapter.id)));
+    return selected.length ? selected : chapters.slice(0, 1);
+  }
+
   function currentSubtopic() {
-    const chapter = currentChapter();
-    const id = safeText(elements.subtopicSelect.value);
-    if (!chapter || id === WHOLE_CHAPTER_VALUE) {
+    const selected = selectedSubtopics();
+    return selected.find((item) => !item.wholeChapter)?.subtopic || null;
+  }
+
+  function selectedSubtopics() {
+    const values = selectedValues(elements.subtopicSelect);
+    const out = [];
+    selectedChapters().forEach((chapter) => {
+      const chapterId = safeText(chapter.id);
+      const wholeValue = `${WHOLE_CHAPTER_VALUE}:${chapterId}`;
+      if (values.includes(wholeValue)) {
+        out.push({ chapter, wholeChapter: true, value: wholeValue, label: `All ${chapterLabel(chapter)} subtopics` });
+        return;
+      }
+      (chapter.subtopics || []).forEach((subtopic) => {
+        const value = `${chapterId}:${safeText(subtopic.id)}`;
+        if (values.includes(value)) {
+          out.push({ chapter, subtopic, wholeChapter: false, value, label: `${subtopicLabel(subtopic)} (${safeText(chapter.title)})` });
+        }
+      });
+    });
+    return out.length
+      ? out
+      : selectedChapters().map((chapter) => ({
+          chapter,
+          wholeChapter: true,
+          value: `${WHOLE_CHAPTER_VALUE}:${safeText(chapter.id)}`,
+          label: `All ${chapterLabel(chapter)} subtopics`
+        }));
+  }
+
+  function selectedSyllabusCoverage() {
+    return selectedSubtopics().map((item) => {
+      if (item.wholeChapter) {
+        const subtopics = (item.chapter.subtopics || []).map(subtopicLabel).filter(Boolean);
+        return {
+          chapterId: safeText(item.chapter.id),
+          chapterTitle: safeText(item.chapter.title),
+          subtopicId: WHOLE_CHAPTER_VALUE,
+          subtopicTitle: "Whole chapter",
+          subtopics
+        };
+      }
+      return {
+        chapterId: safeText(item.chapter.id),
+        chapterTitle: safeText(item.chapter.title),
+        subtopicId: safeText(item.subtopic.id),
+        subtopicTitle: safeText(item.subtopic.title),
+        subtopics: [subtopicLabel(item.subtopic)]
+      };
+    });
+  }
+
+  function coverageLabels() {
+    return selectedSyllabusCoverage().flatMap((item) => {
+      if (item.subtopicId === WHOLE_CHAPTER_VALUE) {
+        return item.subtopics.length
+          ? item.subtopics.map((subtopic) => `${coverageChapterLabel(item)}: ${subtopic}`)
+          : [coverageChapterLabel(item)];
+      }
+      return [`${coverageChapterLabel(item)}: ${item.subtopicId} ${item.subtopicTitle}`];
+    });
+  }
+
+  function chapterSummary(chapters = selectedChapters()) {
+    const labels = chapters.map(chapterLabel).filter(Boolean);
+    if (!labels.length) {
+      return safeText(elements.topicSelect.value);
+    }
+    return labels.length === 1 ? labels[0] : labels.join(" + ");
+  }
+
+  function coverageSummary() {
+    const labels = coverageLabels();
+    if (!labels.length) {
       return null;
     }
-    return (chapter.subtopics || []).find((subtopic) => safeText(subtopic.id) === id) || null;
+    return labels.length === 1 ? labels[0] : labels.join("; ");
+  }
+
+  function requestCoverageLabels(request) {
+    const coverage = Array.isArray(request?.selectedSyllabusCoverage)
+      ? request.selectedSyllabusCoverage
+      : [];
+    if (!coverage.length) {
+      return splitIdeas(request?.subtopic || "");
+    }
+    return coverage.flatMap((item) => {
+      const chapter = coverageChapterLabel(item);
+      const subtopics = Array.isArray(item.subtopics) ? item.subtopics.map(safeText).filter(Boolean) : [];
+      if (safeText(item.subtopicId) === WHOLE_CHAPTER_VALUE) {
+        return subtopics.length ? subtopics.map((subtopic) => `${chapter}: ${subtopic}`) : [chapter];
+      }
+      return [`${chapter}: ${safeText(item.subtopicId)} ${safeText(item.subtopicTitle)}`.trim()];
+    });
   }
 
   function wholeChapterTarget(chapter) {
@@ -362,14 +487,24 @@
     return wholeChapterTarget(chapter);
   }
 
+  function learningTargetForSelection() {
+    const labels = coverageLabels();
+    if (!labels.length) {
+      return "Select syllabus topics to learn.";
+    }
+    return `Master every selected syllabus point without gaps: ${labels.join("; ")}.`;
+  }
+
   function syncInternalTopicSelection() {
-    const chapter = currentChapter();
-    state.selectedTopicIds = chapter?.id ? [safeText(chapter.id)] : [];
+    state.selectedTopicIds = selectedChapters().map((chapter) => safeText(chapter.id)).filter(Boolean);
   }
 
   function syncChapterOptions(preferredChapterId) {
     const subject = safeText(elements.topicSelect.value);
     const chapters = topicsForSubject(subject);
+    const preferredIds = Array.isArray(preferredChapterId)
+      ? preferredChapterId.map(safeText)
+      : safeText(preferredChapterId).split(",").map(safeText).filter(Boolean);
     state.topicalOptions = chapters.map((chapter) => ({
       id: safeText(chapter.id),
       title: safeText(chapter.title),
@@ -392,93 +527,99 @@
         label: chapterLabel(chapter)
       }))
     );
-    if (preferredChapterId && chapters.some((chapter) => safeText(chapter.id) === safeText(preferredChapterId))) {
-      elements.chapterSelect.value = safeText(preferredChapterId);
-    } else if (chapters.length) {
-      elements.chapterSelect.value = safeText(chapters[0].id);
+    const selectedAny = setSelectedValues(elements.chapterSelect, preferredIds);
+    if (!selectedAny && chapters.length) {
+      setSelectedValues(elements.chapterSelect, [safeText(chapters[0].id)]);
     }
     syncSubtopicOptions();
   }
 
   function syncSubtopicOptions(preferredSubtopicId) {
-    const chapter = currentChapter();
-    const subtopics = Array.isArray(chapter?.subtopics) ? chapter.subtopics : [];
-    if (!chapter) {
+    const chapters = selectedChapters();
+    const rawPreferredIds = Array.isArray(preferredSubtopicId)
+      ? preferredSubtopicId.map(safeText)
+      : safeText(preferredSubtopicId).split(",").map(safeText).filter(Boolean);
+    if (!chapters.length) {
       fillSelectOptions(elements.subtopicSelect, [{ value: "", label: "Select a topic first" }]);
       syncLearningTargetOptions();
       return;
     }
-    const options = [
-      { value: WHOLE_CHAPTER_VALUE, label: `Whole chapter: ${safeText(chapter?.title, "selected topic")}` },
-      ...subtopics.map((subtopic) => ({
-        value: safeText(subtopic.id),
-        label: subtopicLabel(subtopic)
-      }))
-    ];
+    const options = chapters.flatMap((chapter) => {
+      const chapterId = safeText(chapter.id);
+      return [
+        { value: `${WHOLE_CHAPTER_VALUE}:${chapterId}`, label: `Whole chapter: ${chapterLabel(chapter)}` },
+        ...(chapter.subtopics || []).map((subtopic) => ({
+          value: `${chapterId}:${safeText(subtopic.id)}`,
+          label: `${subtopicLabel(subtopic)} (${safeText(chapter.title)})`
+        }))
+      ];
+    });
     fillSelectOptions(elements.subtopicSelect, options);
-    const preferred = safeText(preferredSubtopicId);
-    if (preferred && options.some((option) => option.value === preferred)) {
-      elements.subtopicSelect.value = preferred;
-    } else {
-      elements.subtopicSelect.value = WHOLE_CHAPTER_VALUE;
+    const validValues = new Set(options.map((option) => option.value));
+    const preferredIds = rawPreferredIds.flatMap((id) => {
+      if (!id) {
+        return [];
+      }
+      if (validValues.has(id)) {
+        return [id];
+      }
+      if (id === WHOLE_CHAPTER_VALUE) {
+        return chapters
+          .map((chapter) => `${WHOLE_CHAPTER_VALUE}:${safeText(chapter.id)}`)
+          .filter((value) => validValues.has(value));
+      }
+      if (!id.includes(":")) {
+        return chapters
+          .map((chapter) => `${safeText(chapter.id)}:${id}`)
+          .filter((value) => validValues.has(value));
+      }
+      return [];
+    });
+    let selectedAny = setSelectedValues(elements.subtopicSelect, preferredIds);
+    if (!selectedAny) {
+      const wholeValues = chapters.map((chapter) => `${WHOLE_CHAPTER_VALUE}:${safeText(chapter.id)}`);
+      selectedAny = setSelectedValues(elements.subtopicSelect, wholeValues);
     }
     syncLearningTargetOptions();
   }
 
   function syncLearningTargetOptions(preferredTarget) {
-    const chapter = currentChapter();
-    const selectedSubtopic = currentSubtopic();
-    if (!chapter) {
+    const coverage = selectedSyllabusCoverage();
+    const preferredTargets = Array.isArray(preferredTarget)
+      ? preferredTarget.map(safeText)
+      : safeText(preferredTarget).split("||").map(safeText).filter(Boolean);
+    if (!coverage.length) {
       fillSelectOptions(elements.learningTargetSelect, [{ value: "", label: "Select a topic first" }]);
       state.selectedTopicIds = [];
       return;
     }
 
-    const subtopics = Array.isArray(chapter.subtopics) ? chapter.subtopics : [];
     const options = [
       {
-        value: wholeChapterTarget(chapter),
-        label: `Whole chapter: ${safeText(chapter.title)}`
+        value: learningTargetForSelection(),
+        label: "Complete selected coverage"
       },
-      ...subtopics.map((subtopic) => {
-        const target = learningTargetFor(chapter, subtopic);
-        return {
+      ...coverage.flatMap((item) => {
+        if (item.subtopicId === WHOLE_CHAPTER_VALUE) {
+          const target = `Master all of ${item.chapterId}. ${item.chapterTitle}: ${item.subtopics.join(", ")}.`;
+          return [{ value: target, label: `Whole chapter: ${item.chapterId}. ${item.chapterTitle}` }];
+        }
+        const target = `Learn ${item.subtopicId} ${item.subtopicTitle} in ${item.chapterId}. ${item.chapterTitle}.`;
+        return [{
           value: target,
-          label: subtopicLabel(subtopic)
-        };
+          label: `${item.subtopicId} ${item.subtopicTitle}`
+        }];
       })
     ];
     fillSelectOptions(elements.learningTargetSelect, options);
-    const desired = selectedSubtopic ? learningTargetFor(chapter, selectedSubtopic) : safeText(preferredTarget);
-    if (desired && options.some((option) => option.value === desired)) {
-      elements.learningTargetSelect.value = desired;
-    } else if (!selectedSubtopic && preferredTarget && !options.some((option) => option.value === preferredTarget)) {
-      const option = document.createElement("option");
-      option.value = safeText(preferredTarget);
-      option.textContent = safeText(preferredTarget);
-      elements.learningTargetSelect.appendChild(option);
-      elements.learningTargetSelect.value = safeText(preferredTarget);
-    } else {
-      elements.learningTargetSelect.value = options[0]?.value || "";
+    let selectedAny = setSelectedValues(elements.learningTargetSelect, preferredTargets);
+    if (!selectedAny) {
+      selectedAny = setSelectedValues(elements.learningTargetSelect, [options[0]?.value]);
     }
     syncInternalTopicSelection();
   }
 
   function syncSubtopicFromLearningTarget() {
-    const chapter = currentChapter();
-    if (!chapter) {
-      return;
-    }
-    const selectedTarget = safeText(elements.learningTargetSelect.value);
-    if (selectedTarget === wholeChapterTarget(chapter)) {
-      elements.subtopicSelect.value = WHOLE_CHAPTER_VALUE;
-      syncInternalTopicSelection();
-      return;
-    }
-    const match = (chapter.subtopics || []).find((subtopic) => learningTargetFor(chapter, subtopic) === selectedTarget);
-    if (match) {
-      elements.subtopicSelect.value = safeText(match.id);
-    }
     syncInternalTopicSelection();
   }
 
@@ -513,9 +654,9 @@
     elements.syllabusSelect.value = request.syllabus || defaultRequest().syllabus;
     syncLevelOptions(request.level);
     syncTopicOptions(request.topic);
-    syncChapterOptions(request.chapterId);
-    syncSubtopicOptions(request.subtopicId);
-    syncLearningTargetOptions(request.learningTarget || request.goal);
+    syncChapterOptions(request.chapterIds || request.chapterId);
+    syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+    syncLearningTargetOptions(request.learningTargets || request.learningTarget || request.goal);
     elements.paceSelect.value = request.pace || "balanced";
     elements.worksheetLengthSelect.value = String(request.worksheetLength || 12);
     elements.focusInput.value = request.focus || "";
@@ -523,25 +664,36 @@
 
   function readRequestFromForm() {
     const subject = safeText(elements.topicSelect.value);
-    const chapter = currentChapter();
-    const selectedSubtopic = currentSubtopic();
-    const wholeChapter = safeText(elements.subtopicSelect.value) === WHOLE_CHAPTER_VALUE;
-    const chapterTitle = safeText(chapter?.title);
-    const selectedTarget = safeText(elements.learningTargetSelect.value) || learningTargetFor(chapter, selectedSubtopic);
-    const subtopicTitle = wholeChapter
-      ? `All ${chapterLabel(chapter)} subtopics`
-      : subtopicLabel(selectedSubtopic);
+    const chapters = selectedChapters();
+    const coverage = selectedSyllabusCoverage();
+    const selectedTargets = selectedValues(elements.learningTargetSelect);
+    const chapterIds = chapters.map((chapter) => safeText(chapter.id)).filter(Boolean);
+    const chapterTitle = chapterSummary(chapters);
+    const subtopicIds = selectedSubtopics().map((item) => item.value).filter(Boolean);
+    const subtopicTitle = coverageSummary() || `All selected ${subject} subtopics`;
+    const selectedTarget = selectedTargets.length
+      ? selectedTargets.join(" ")
+      : learningTargetForSelection();
+    const labels = coverageLabels();
+    const completeCoverageInstruction = labels.length
+      ? `Cover every selected syllabus point without gaps: ${labels.join("; ")}.`
+      : "Cover every selected syllabus point without gaps.";
     syncInternalTopicSelection();
     return {
       syllabus: safeText(elements.syllabusSelect.value),
       level: safeText(elements.levelSelect.value),
       topic: subject,
-      chapterId: safeText(chapter?.id),
+      chapterIds,
+      chapterId: chapterIds[0] || "",
       chapterTitle,
-      subtopicId: wholeChapter ? WHOLE_CHAPTER_VALUE : safeText(selectedSubtopic?.id),
+      subtopicIds,
+      subtopicId: subtopicIds[0] || "",
       subtopic: subtopicTitle,
+      selectedSyllabusCoverage: coverage,
+      coverageLabels: labels,
+      learningTargets: selectedTargets,
       learningTarget: selectedTarget,
-      goal: selectedTarget,
+      goal: `${selectedTarget} ${completeCoverageInstruction}`,
       focus: safeText(elements.focusInput.value),
       pace: safeText(elements.paceSelect.value, "balanced"),
       worksheetLength: Number(elements.worksheetLengthSelect.value) || 12,
@@ -644,7 +796,7 @@
         topic: contentTopicForRequest(request),
         subject,
         goal: request.goal,
-        focus: [request.subtopic, request.focus].filter(Boolean).join(", ")
+        focus: [request.subtopic, request.focus, ...(request.coverageLabels || [])].filter(Boolean).join(", ")
       });
       const response = await fetch(`${API_BASE}/api/study-pack/recommend?${params.toString()}`);
       if (!response.ok) {
@@ -673,9 +825,9 @@
     const subject = generatorSubjectForRequest(request);
     if (!state.bridgeOnline || !subject) {
       syncTopicOptions(request.topic);
-      syncChapterOptions(request.chapterId);
-      syncSubtopicOptions(request.subtopicId);
-      syncLearningTargetOptions(request.learningTarget);
+      syncChapterOptions(request.chapterIds || request.chapterId);
+      syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+      syncLearningTargetOptions(request.learningTargets || request.learningTarget);
       renderOfficialTopicChoices();
       return;
     }
@@ -712,15 +864,15 @@
       state.syllabusSubjectOrder = unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]);
       state.syllabusTopicsBySubject = nextTopicsBySubject;
       syncTopicOptions(request.topic);
-      syncChapterOptions(request.chapterId);
-      syncSubtopicOptions(request.subtopicId);
-      syncLearningTargetOptions(request.learningTarget);
+      syncChapterOptions(request.chapterIds || request.chapterId);
+      syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+      syncLearningTargetOptions(request.learningTargets || request.learningTarget);
       renderOfficialTopicChoices();
     } catch (error) {
       syncTopicOptions(request.topic);
-      syncChapterOptions(request.chapterId);
-      syncSubtopicOptions(request.subtopicId);
-      syncLearningTargetOptions(request.learningTarget);
+      syncChapterOptions(request.chapterIds || request.chapterId);
+      syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+      syncLearningTargetOptions(request.learningTargets || request.learningTarget);
       renderOfficialTopicChoices();
     }
   }
@@ -860,8 +1012,10 @@
   function buildFocusItems(request, profile) {
     const contentTopic = contentTopicForRequest(request);
     const contentSubtopic = contentSubtopicForRequest(request);
+    const coverage = requestCoverageLabels(request);
     return unique(
       [
+        ...coverage,
         ...(Array.isArray(request.recommendedFocus) ? request.recommendedFocus : []),
         contentSubtopic,
         ...splitIdeas(request.focus),
@@ -877,7 +1031,11 @@
 
   function buildImportantPoints(request, profile, focusItems) {
     const contentTopic = contentTopicForRequest(request);
+    const coverage = requestCoverageLabels(request);
     return [
+      coverage.length
+        ? `Coverage checklist: ${coverage.slice(0, 8).join("; ")}${coverage.length > 8 ? "; and the remaining selected points" : ""}.`
+        : `Cover the selected syllabus points for ${contentTopic}.`,
       `Start ${contentTopic} by locking in ${profile.centralQuestion}.`,
       `Use the selected syllabus target as the filter: ${request.learningTarget || request.goal}.`,
       `Turn each focus area into one definition, one example, and one quick self-check.`,
@@ -889,18 +1047,24 @@
 
   function buildNoteCards(request, profile, focusItems) {
     const contentTopic = contentTopicForRequest(request);
+    const coverage = requestCoverageLabels(request);
     const first = focusItems[0] || `core ideas in ${contentTopic}`;
     const second = focusItems[1] || `worked examples in ${contentTopic}`;
     const third = focusItems[2] || `common mistakes in ${contentTopic}`;
 
     return [
       {
-        title: "Big picture",
-        points: [
-          `${contentTopic} is being studied here as a usable skill, not just a fact list.`,
-          `The first checkpoint is whether the student can explain ${profile.centralQuestion}.`,
-          `Keep linking every example back to the selected syllabus target: ${request.learningTarget || request.goal}.`
-        ]
+        title: "Coverage checklist",
+        points: coverage.length
+          ? [
+              ...coverage.slice(0, 4).map((item) => `Include ${item}.`),
+              ...(coverage.length > 4 ? [`Also cover: ${coverage.slice(4).join("; ")}.`] : [])
+            ].slice(0, 4)
+          : [
+              `${contentTopic} is being studied here as a usable skill, not just a fact list.`,
+              `The first checkpoint is whether the student can explain ${profile.centralQuestion}.`,
+              `Keep linking every example back to the selected syllabus target: ${request.learningTarget || request.goal}.`
+            ]
       },
       {
         title: "What to learn first",
@@ -927,6 +1091,20 @@
         ]
       }
     ];
+  }
+
+  function buildCoverageChecklistCard(request) {
+    const coverage = requestCoverageLabels(request);
+    if (!coverage.length) {
+      return null;
+    }
+    return {
+      title: "Coverage checklist",
+      points: [
+        ...coverage.slice(0, 4).map((item) => `Include ${item}.`),
+        ...(coverage.length > 4 ? [`Also cover: ${coverage.slice(4).join("; ")}.`] : [])
+      ].slice(0, 4)
+    };
   }
 
   function buildDiagramSvg(request, profile, focusItems) {
@@ -1182,8 +1360,22 @@
     const focusItems = Array.isArray(rawPack?.notes?.focusItems) && rawPack.notes.focusItems.length
       ? rawPack.notes.focusItems
       : buildFocusItems(request, profile);
-    const noteCards = Array.isArray(rawPack?.notes?.noteCards) ? rawPack.notes.noteCards : [];
-    const importantPoints = Array.isArray(rawPack?.notes?.importantPoints) ? rawPack.notes.importantPoints : [];
+    const noteCards = Array.isArray(rawPack?.notes?.noteCards) ? [...rawPack.notes.noteCards] : [];
+    const coverageCard = buildCoverageChecklistCard(request);
+    if (coverageCard) {
+      if (noteCards.length) {
+        noteCards[0] = coverageCard;
+      } else {
+        noteCards.push(coverageCard);
+      }
+    }
+    const coverageImportantPoint = requestCoverageLabels(request).length
+      ? `Coverage checklist: ${requestCoverageLabels(request).join("; ")}.`
+      : "";
+    const importantPoints = [
+      coverageImportantPoint,
+      ...(Array.isArray(rawPack?.notes?.importantPoints) ? rawPack.notes.importantPoints : [])
+    ].filter(Boolean);
     const quizLanes = rawPack?.quiz?.lanes || {};
     const normalizedLanes = {
       Foundation: Array.isArray(quizLanes.Foundation) ? quizLanes.Foundation : [],
@@ -1573,9 +1765,14 @@
             topic: contentTopicForRequest(request),
             subject: request.topic,
             subtopic: contentSubtopicForRequest(request),
+            chapterIds: request.chapterIds,
             chapterId: request.chapterId,
             chapterTitle: request.chapterTitle,
+            subtopicIds: request.subtopicIds,
             subtopicId: request.subtopicId,
+            selectedSyllabusCoverage: request.selectedSyllabusCoverage,
+            coverageLabels: request.coverageLabels,
+            learningTargets: request.learningTargets,
             learningTarget: request.learningTarget,
             goal: request.goal,
             description: request.goal,
@@ -1760,6 +1957,9 @@
           subject,
           topic: chosenTitles.join(" + ") || subject,
           topicIds,
+          subtopicIds: request.subtopicIds,
+          selectedSyllabusCoverage: request.selectedSyllabusCoverage,
+          coverageLabels: request.coverageLabels,
           worksheetLength: request.worksheetLength
         })
       });
@@ -1768,7 +1968,7 @@
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
       state.currentPack.worksheet.generatorCommand = safeText(payload?.generatorCommand);
-      state.currentPack.worksheet.scriptNote = "Generated by the local topical paper script using the selected official Biology Chapter 14 topic.";
+      state.currentPack.worksheet.scriptNote = "Generated by the local topical paper script using the selected official syllabus topics.";
       renderWorksheet(state.currentPack);
       const url = payload?.result?.output?.pdfPathLocalUrl || payload?.result?.output?.pdfUrlAbsolute || payload?.result?.output?.pdfUrl;
       if (!url) {
@@ -2041,9 +2241,9 @@
     elements.syllabusSelect.value = request.syllabus;
     syncLevelOptions(request.level);
     syncTopicOptions(request.topic);
-    syncChapterOptions(request.chapterId);
-    syncSubtopicOptions(request.subtopicId);
-    syncLearningTargetOptions(request.learningTarget || request.goal);
+    syncChapterOptions(request.chapterIds || request.chapterId);
+    syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+    syncLearningTargetOptions(request.learningTargets || request.learningTarget || request.goal);
     elements.paceSelect.value = request.pace;
     elements.worksheetLengthSelect.value = String(request.worksheetLength);
     elements.focusInput.value = request.focus || "";

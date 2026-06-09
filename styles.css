@@ -872,6 +872,17 @@ button:focus-visible,
   resize: vertical;
 }
 
+.field select.multi-select {
+  min-height: 190px;
+  padding: 10px;
+}
+
+.field select.multi-select option {
+  padding: 9px 10px;
+  border-radius: 10px;
+  white-space: normal;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

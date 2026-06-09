@@ -60,12 +60,14 @@
 
             <label class="field">
               <span>Topic / chapter</span>
-              <select id="chapterSelect" required></select>
+              <select id="chapterSelect" class="multi-select" multiple size="6" required></select>
+              <small class="hint">Choose one or more syllabus chapters.</small>
             </label>
 
             <label class="field">
               <span>Subtopic</span>
-              <select id="subtopicSelect" required></select>
+              <select id="subtopicSelect" class="multi-select" multiple size="6" required></select>
+              <small class="hint">Choose one or more subtopics from the selected chapters.</small>
             </label>
           </div>
 
@@ -91,8 +93,8 @@
 
           <label class="field">
             <span>What should the student learn?</span>
-            <select id="learningTargetSelect" required></select>
-            <small class="hint">This list comes from the official syllabus subtopics in the selected chapter.</small>
+            <select id="learningTargetSelect" class="multi-select" multiple size="6" required></select>
+            <small class="hint">The AI will cover every selected syllabus point in the notes and quiz.</small>
           </label>
 
           <label class="field">
