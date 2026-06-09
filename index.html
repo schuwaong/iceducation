@@ -265,10 +265,15 @@
                 Generate a worksheet PDF from the current study pack, or open a clean print layout.
               </p>
               <div class="study-actions compact-actions">
-                <button class="primary-button" id="downloadWorksheetButton" type="button">Download worksheet PDF</button>
+                <button class="primary-button" id="generateExamStyleButton" type="button">Generate exam-style PDF</button>
+                <button class="ghost-button" id="downloadGeneratedWorksheetButton" type="button" disabled>Download generated exam PDF</button>
+                <button class="ghost-button" id="downloadWorksheetButton" type="button">Download quick worksheet PDF</button>
                 <button class="ghost-button" id="printWorksheetButton" type="button">Open print view</button>
                 <button class="ghost-button" id="downloadAnswerKeyButton" type="button">Download answer key</button>
               </div>
+              <p class="hub-copy" id="worksheetActionStatus">
+                Generate the exam-style PDF from the local Python script, or use the quick worksheet PDF from this page.
+              </p>
               <ol class="worksheet-preview" id="worksheetPreview"></ol>
               <div id="worksheetScriptWrap" class="script-wrap" hidden>
                 <p class="eyebrow">PDF Generator Script</p>

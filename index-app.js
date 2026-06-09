@@ -75,6 +75,7 @@
     quizSessions: {},
     bridgeOnline: false,
     bridgeNote: "",
+    bridgeGeneratorScript: "",
     aiGenerationReady: false,
     uploadMarkingReady: false,
     catalog: CATALOG,
@@ -145,6 +146,9 @@
     worksheetScriptWrap: document.getElementById("worksheetScriptWrap"),
     worksheetScriptNote: document.getElementById("worksheetScriptNote"),
     worksheetScriptCommand: document.getElementById("worksheetScriptCommand"),
+    worksheetActionStatus: document.getElementById("worksheetActionStatus"),
+    generateExamStyleButton: document.getElementById("generateExamStyleButton"),
+    downloadGeneratedWorksheetButton: document.getElementById("downloadGeneratedWorksheetButton"),
     downloadWorksheetButton: document.getElementById("downloadWorksheetButton"),
     printWorksheetButton: document.getElementById("printWorksheetButton"),
     downloadAnswerKeyButton: document.getElementById("downloadAnswerKeyButton"),
@@ -277,6 +281,49 @@
 
   function saveCacheStore(store) {
     window.localStorage.setItem(CACHE_STORE_KEY, JSON.stringify(store));
+  }
+
+  function persistCurrentPack() {
+    if (!state.currentPack?.cacheKey) {
+      return;
+    }
+    const store = loadCacheStore();
+    store[state.currentPack.cacheKey] = state.currentPack;
+    saveCacheStore(store);
+    window.localStorage.setItem(LAST_PACK_KEY, state.currentPack.cacheKey);
+  }
+
+  function resolveApiUrl(url) {
+    const value = safeText(url);
+    if (!value) {
+      return "";
+    }
+    if (/^(https?:|blob:|data:)/i.test(value)) {
+      return value;
+    }
+    if (value.startsWith("/")) {
+      return `${API_BASE}${value}`;
+    }
+    return `${API_BASE}/${value.replace(/^\.?\//, "")}`;
+  }
+
+  function fileNameFromUrl(url, fallback) {
+    const value = safeText(url);
+    if (!value) {
+      return fallback;
+    }
+    try {
+      const parsed = new URL(resolveApiUrl(value));
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      return decodeURIComponent(parts[parts.length - 1] || fallback);
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function canGenerateOfficialWorksheet(request = state.currentPack?.request) {
+    const topicIds = Array.isArray(request?.topicIds) ? request.topicIds.filter(Boolean) : [];
+    return Boolean(state.bridgeOnline && generatorSubjectForRequest(request) && topicIds.length);
   }
 
   function bundledSnapshotSyllabi() {
@@ -1664,8 +1711,21 @@
         questions: Array.isArray(worksheet.questions) ? worksheet.questions : [],
         answerKeyLines,
         rubricText: safeText(worksheet.rubricText) || answerKeyLines.join("\n\n"),
+        generatorScript: safeText(worksheet.generatorScript),
         generatorCommand: safeText(worksheet.generatorCommand),
-        scriptNote: safeText(worksheet.scriptNote)
+        scriptNote: safeText(worksheet.scriptNote),
+        generatedPdfUrl: resolveApiUrl(
+          worksheet.generatedPdfUrl
+          || rawPack?.result?.output?.pdfPathLocalUrl
+          || rawPack?.result?.output?.pdfUrlAbsolute
+          || rawPack?.result?.output?.pdfUrl
+        ),
+        generatedAnswerKeyUrl: resolveApiUrl(
+          worksheet.generatedAnswerKeyUrl
+          || rawPack?.result?.output?.answerKeyLocalUrl
+          || rawPack?.result?.output?.answerKeyPdfUrlAbsolute
+          || rawPack?.result?.output?.markSchemePdfUrl
+        )
       }
     };
   }
@@ -1729,6 +1789,7 @@
         throw new Error(`HTTP ${response.status}`);
       }
       const payload = await response.json();
+      state.bridgeGeneratorScript = safeText(payload.generatorScript);
       state.aiGenerationReady = Boolean(payload.studyPackGenerationConfigured);
       state.uploadMarkingReady = Boolean(payload.uploadMarkingConfigured || payload.geminiConfigured || payload.deepseekConfigured);
       const providerHint = payload.geminiConfigured
@@ -1742,6 +1803,7 @@
     } catch (error) {
       state.aiGenerationReady = false;
       state.uploadMarkingReady = false;
+      state.bridgeGeneratorScript = "";
       const publicSite = window.location.hostname.endsWith("github.io");
       const usingBundledSnapshot = applyBundledSnapshot();
       const libraryCount = Number(state.librarySummary?.count) || 0;
@@ -1768,6 +1830,9 @@
       }
       state.topicalOptions = [];
       renderOfficialTopicChoices();
+    }
+    if (state.currentPack) {
+      renderWorksheet(state.currentPack);
     }
   }
 
@@ -1991,16 +2056,36 @@
       )
       .join("");
 
+    const generatedPdfUrl = resolveApiUrl(pack.worksheet.generatedPdfUrl);
+    const generatedAnswerKeyUrl = resolveApiUrl(pack.worksheet.generatedAnswerKeyUrl);
+    const canGenerateOfficial = canGenerateOfficialWorksheet(pack.request);
     const command = safeText(pack.worksheet.generatorCommand);
+    const generatorScript = safeText(pack.worksheet.generatorScript || state.bridgeGeneratorScript);
     const note = safeText(pack.worksheet.scriptNote);
-    if (command) {
+    if (command || generatorScript) {
       elements.worksheetScriptWrap.hidden = false;
-      elements.worksheetScriptNote.textContent = note || "This worksheet PDF came from the local IGCSE topical paper generator.";
-      elements.worksheetScriptCommand.textContent = command;
+      elements.worksheetScriptNote.textContent = command
+        ? note || "This exam-style PDF came from the local Python topical paper generator."
+        : "Local Python script path for exam-style worksheet generation.";
+      elements.worksheetScriptCommand.textContent = command || generatorScript;
     } else {
       elements.worksheetScriptWrap.hidden = true;
       elements.worksheetScriptNote.textContent = "The local Python script used for this worksheet will appear here.";
       elements.worksheetScriptCommand.textContent = "";
+    }
+
+    elements.generateExamStyleButton.disabled = !canGenerateOfficial;
+    elements.downloadGeneratedWorksheetButton.disabled = !generatedPdfUrl;
+    elements.downloadAnswerKeyButton.textContent = generatedAnswerKeyUrl ? "Download official answer key" : "Download answer key";
+
+    if (generatedPdfUrl) {
+      elements.worksheetActionStatus.textContent = "Exam-style PDF generated from the local Python script. You can download it again any time.";
+    } else if (!state.bridgeOnline) {
+      elements.worksheetActionStatus.textContent = "Quick PDF and print view work now. Start the local bridge to generate official exam-style PDFs.";
+    } else if (!canGenerateOfficial) {
+      elements.worksheetActionStatus.textContent = "Select supported official syllabus topics to generate an exam-style PDF from the local Python script.";
+    } else {
+      elements.worksheetActionStatus.textContent = "Generate the exam-style PDF from the local Python script, then download the finished file.";
     }
   }
 
@@ -2190,6 +2275,17 @@
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
+  async function downloadRemoteFile(url, fileName) {
+    const resolvedUrl = resolveApiUrl(url);
+    const response = await fetch(resolvedUrl);
+    if (!response.ok) {
+      throw new Error(`Could not download ${fileName || "the file"} (HTTP ${response.status}).`);
+    }
+    const blob = await response.blob();
+    downloadBlob(blob, fileName || fileNameFromUrl(resolvedUrl, "worksheet.pdf"));
+    return resolvedUrl;
+  }
+
   function downloadWorksheetPdf() {
     if (!state.currentPack) {
       return;
@@ -2207,17 +2303,18 @@
     ]);
     const blob = buildPdfBlob(`${pack.title} Worksheet`, `${pack.subtitle} | Extra practice`, lines);
     downloadBlob(blob, `${slugify(pack.title)}-worksheet.pdf`);
+    elements.worksheetActionStatus.textContent = "Quick worksheet PDF downloaded from the current study pack.";
   }
 
-  async function downloadGeneratedTopicalWorksheet() {
+  async function generateExamStyleWorksheet() {
     if (!state.currentPack) {
-      return false;
+      return null;
     }
     const request = state.currentPack.request;
     const subject = generatorSubjectForRequest(request);
     const topicIds = (request.topicIds || []).filter(Boolean);
     if (!state.bridgeOnline || !subject || !topicIds.length) {
-      return false;
+      return null;
     }
 
     const chosenTitles = state.topicalOptions
@@ -2225,8 +2322,9 @@
       .map((option) => option.title);
 
     try {
-      elements.downloadWorksheetButton.disabled = true;
-      elements.downloadWorksheetButton.textContent = "Generating official PDF...";
+      elements.generateExamStyleButton.disabled = true;
+      elements.generateExamStyleButton.textContent = "Generating exam-style PDF...";
+      elements.worksheetActionStatus.textContent = "Generating the official exam-style PDF from the local Python script...";
       const response = await fetch(`${API_BASE}/api/worksheets/generate-topical`, {
         method: "POST",
         headers: {
@@ -2248,6 +2346,7 @@
       if (!response.ok) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
+      state.currentPack.worksheet.generatorScript = safeText(payload?.generatorScript) || state.bridgeGeneratorScript;
       state.currentPack.worksheet.generatorCommand = safeText(payload?.generatorCommand);
       const targetMarks = Number(payload?.targetMarks) || Number(payload?.result?.generator?.targetMarks) || 0;
       const selectedSubtopicCount = Number(payload?.selectedSubtopicCount) || 0;
@@ -2255,28 +2354,79 @@
       state.currentPack.worksheet.scriptNote = targetMarks && selectedSubtopicCount && marksPerSubtopic
         ? `Generated by the local topical paper script using ${selectedSubtopicCount} selected subtopics at ${marksPerSubtopic} marks each (${targetMarks} target marks total).`
         : "Generated by the local topical paper script using the selected official syllabus topics.";
-      renderWorksheet(state.currentPack);
-      const url = payload?.result?.output?.pdfPathLocalUrl || payload?.result?.output?.pdfUrlAbsolute || payload?.result?.output?.pdfUrl;
-      if (!url) {
+      const pdfUrl = resolveApiUrl(payload?.result?.output?.pdfPathLocalUrl || payload?.result?.output?.pdfUrlAbsolute || payload?.result?.output?.pdfUrl);
+      const answerKeyUrl = resolveApiUrl(payload?.result?.output?.answerKeyLocalUrl || payload?.result?.output?.answerKeyPdfUrlAbsolute || payload?.result?.output?.markSchemePdfUrl);
+      if (!pdfUrl) {
         throw new Error("No generated worksheet PDF URL returned.");
       }
-      window.open(url, "_blank", "noopener,noreferrer");
-      return true;
+      state.currentPack.worksheet.generatedPdfUrl = pdfUrl;
+      state.currentPack.worksheet.generatedPdfName = fileNameFromUrl(pdfUrl, `${slugify(state.currentPack.title)}-exam-style.pdf`);
+      state.currentPack.worksheet.generatedAnswerKeyUrl = answerKeyUrl;
+      state.currentPack.worksheet.generatedAnswerKeyName = fileNameFromUrl(answerKeyUrl, `${slugify(state.currentPack.title)}-answer-key.pdf`);
+      persistCurrentPack();
+      renderWorksheet(state.currentPack);
+      return {
+        pdfUrl,
+        answerKeyUrl,
+      };
     } catch (error) {
-      return false;
+      elements.worksheetActionStatus.textContent = safeText(error.message, "Could not generate the exam-style PDF.");
+      return null;
     } finally {
-      elements.downloadWorksheetButton.disabled = false;
-      elements.downloadWorksheetButton.textContent = "Download worksheet PDF";
+      renderWorksheet(state.currentPack);
+      elements.generateExamStyleButton.textContent = "Generate exam-style PDF";
     }
   }
 
-  function downloadAnswerKeyPdf() {
+  async function downloadGeneratedExamStyleWorksheet() {
+    if (!state.currentPack) {
+      return;
+    }
+    let url = resolveApiUrl(state.currentPack.worksheet.generatedPdfUrl);
+    if (!url) {
+      const generated = await generateExamStyleWorksheet();
+      url = resolveApiUrl(generated?.pdfUrl);
+    }
+    if (!url) {
+      return;
+    }
+    const fileName = safeText(state.currentPack.worksheet.generatedPdfName) || fileNameFromUrl(url, `${slugify(state.currentPack.title)}-exam-style.pdf`);
+    try {
+      elements.downloadGeneratedWorksheetButton.disabled = true;
+      elements.downloadGeneratedWorksheetButton.textContent = "Downloading exam-style PDF...";
+      await downloadRemoteFile(url, fileName);
+      elements.worksheetActionStatus.textContent = "Exam-style PDF downloaded.";
+    } catch (error) {
+      elements.worksheetActionStatus.textContent = safeText(error.message, "Could not download the exam-style PDF.");
+    } finally {
+      renderWorksheet(state.currentPack);
+      elements.downloadGeneratedWorksheetButton.textContent = "Download generated exam PDF";
+    }
+  }
+
+  async function downloadAnswerKeyPdf() {
     if (!state.currentPack) {
       return;
     }
     const pack = state.currentPack;
+    const answerKeyUrl = resolveApiUrl(pack.worksheet.generatedAnswerKeyUrl);
+    if (answerKeyUrl) {
+      const fileName = safeText(pack.worksheet.generatedAnswerKeyName) || fileNameFromUrl(answerKeyUrl, `${slugify(pack.title)}-answer-key.pdf`);
+      try {
+        elements.downloadAnswerKeyButton.disabled = true;
+        elements.downloadAnswerKeyButton.textContent = "Downloading official answer key...";
+        await downloadRemoteFile(answerKeyUrl, fileName);
+        elements.worksheetActionStatus.textContent = "Official answer key downloaded.";
+        return;
+      } catch (error) {
+        elements.worksheetActionStatus.textContent = safeText(error.message, "Could not download the official answer key.");
+      } finally {
+        renderWorksheet(state.currentPack);
+      }
+    }
     const blob = buildPdfBlob(`${pack.title} Answer Key`, `${pack.subtitle} | Marking points`, pack.worksheet.answerKeyLines);
     downloadBlob(blob, `${slugify(pack.title)}-answer-key.pdf`);
+    elements.worksheetActionStatus.textContent = "Answer key downloaded.";
   }
 
   function openPrintView() {
@@ -2285,11 +2435,6 @@
     }
 
     const pack = state.currentPack;
-    const popup = window.open("", "_blank", "noopener,noreferrer");
-    if (!popup) {
-      return;
-    }
-
     const questionHtml = pack.worksheet.questions
       .map(
         (question) => `
@@ -2301,8 +2446,7 @@
         `
       )
       .join("");
-
-    popup.document.write(`
+    const html = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
@@ -2326,15 +2470,23 @@
         <p>${escapeHtml(pack.worksheet.intro)}</p>
         ${questionHtml}
         <script>
-          window.onload = function () {
+          window.addEventListener("load", function () {
             window.focus();
-            window.print();
-          };
+            window.setTimeout(function () { window.print(); }, 120);
+          });
         <\/script>
       </body>
       </html>
-    `);
-    popup.document.close();
+    `;
+    const popupUrl = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    const popup = window.open(popupUrl, "_blank");
+    if (!popup) {
+      elements.worksheetActionStatus.textContent = "Print preview was blocked. Allow pop-ups for this site and try again.";
+      window.setTimeout(() => URL.revokeObjectURL(popupUrl), 60000);
+      return;
+    }
+    elements.worksheetActionStatus.textContent = "Print preview opened in a new tab.";
+    window.setTimeout(() => URL.revokeObjectURL(popupUrl), 60000);
   }
 
   function renderMarkingResult(html) {
@@ -2517,12 +2669,9 @@
 
     elements.resetLaneButton.addEventListener("click", resetCurrentLane);
     elements.nextQuestionButton.addEventListener("click", continueQuiz);
-    elements.downloadWorksheetButton.addEventListener("click", async () => {
-      const usedGenerator = await downloadGeneratedTopicalWorksheet();
-      if (!usedGenerator) {
-        downloadWorksheetPdf();
-      }
-    });
+    elements.generateExamStyleButton.addEventListener("click", generateExamStyleWorksheet);
+    elements.downloadGeneratedWorksheetButton.addEventListener("click", downloadGeneratedExamStyleWorksheet);
+    elements.downloadWorksheetButton.addEventListener("click", downloadWorksheetPdf);
     elements.printWorksheetButton.addEventListener("click", openPrintView);
     elements.downloadAnswerKeyButton.addEventListener("click", downloadAnswerKeyPdf);
     elements.markWorksheetButton.addEventListener("click", markUploadedWorksheet);
