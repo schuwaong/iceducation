@@ -4,11 +4,15 @@
   const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
   const TRIAL_QUERY = new URLSearchParams(window.location.search);
   const TRIAL_BIOLOGY_14 = TRIAL_QUERY.get("trial") === "bio14";
+  const WHOLE_CHAPTER_VALUE = "__whole_chapter__";
   const API_BASE = (() => {
     if (window.IC_EDUCATE_API_BASE) {
       return String(window.IC_EDUCATE_API_BASE).replace(/\/$/, "");
     }
     if (window.location.protocol.startsWith("http") && !window.location.hostname.endsWith("github.io")) {
+      if (["127.0.0.1", "localhost"].includes(window.location.hostname) && window.location.port !== "8001") {
+        return "http://127.0.0.1:8001";
+      }
       return window.location.origin.replace(/\/$/, "");
     }
     return "http://127.0.0.1:8001";
@@ -47,6 +51,22 @@
     }
   };
 
+  const FALLBACK_SYLLABUS_TOPICS = {
+    Biology: [
+      {
+        id: "14",
+        title: "Coordination and response",
+        subtopics: [
+          { id: "14.1", title: "Coordination and response" },
+          { id: "14.2", title: "Sense organs" },
+          { id: "14.3", title: "Hormones" },
+          { id: "14.4", title: "Homeostasis" },
+          { id: "14.5", title: "Tropic responses" }
+        ]
+      }
+    ]
+  };
+
   const state = {
     currentPack: null,
     currentTab: "notes",
@@ -55,6 +75,8 @@
     bridgeOnline: false,
     bridgeNote: "",
     aiGenerationReady: false,
+    syllabusSubjectOrder: Object.keys(FALLBACK_SYLLABUS_TOPICS),
+    syllabusTopicsBySubject: { ...FALLBACK_SYLLABUS_TOPICS },
     topicalOptions: [],
     selectedTopicIds: [],
     recommendations: null
@@ -65,9 +87,11 @@
     syllabusSelect: document.getElementById("syllabusSelect"),
     levelSelect: document.getElementById("levelSelect"),
     topicSelect: document.getElementById("topicSelect"),
+    chapterSelect: document.getElementById("chapterSelect"),
+    subtopicSelect: document.getElementById("subtopicSelect"),
+    learningTargetSelect: document.getElementById("learningTargetSelect"),
     paceSelect: document.getElementById("paceSelect"),
     worksheetLengthSelect: document.getElementById("worksheetLengthSelect"),
-    goalInput: document.getElementById("goalInput"),
     focusInput: document.getElementById("focusInput"),
     recommendationWrap: document.getElementById("recommendationWrap"),
     recommendationHint: document.getElementById("recommendationHint"),
@@ -207,6 +231,19 @@
     });
   }
 
+  function fillSelectOptions(select, items) {
+    select.innerHTML = "";
+    items.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = safeText(item.value);
+      option.textContent = safeText(item.label || item.value);
+      if (item.disabled) {
+        option.disabled = true;
+      }
+      select.appendChild(option);
+    });
+  }
+
   function loadCacheStore() {
     try {
       return JSON.parse(window.localStorage.getItem(CACHE_STORE_KEY) || "{}");
@@ -225,20 +262,32 @@
         syllabus: "Cambridge IGCSE",
         level: "IGCSE",
         topic: "Biology",
-        goal: "Master IGCSE Biology Chapter 14 Coordination and response with concise notes, exam-style quizzes, and a worksheet focused on reflexes, the eye, hormones, and homeostasis.",
-        focus: "Chapter 14 Coordination and response; reflex arc; sense organs and the eye; hormones; homeostasis; blood glucose control; tropic responses",
+        chapterId: "14",
+        chapterTitle: "Coordination and response",
+        subtopicId: WHOLE_CHAPTER_VALUE,
+        subtopic: "All Chapter 14 subtopics",
+        learningTarget: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
+        goal: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
+        focus: "",
         pace: "balanced",
-        worksheetLength: 12
+        worksheetLength: 12,
+        topicIds: ["14"]
       };
     }
     return {
       syllabus: Object.keys(CATALOG)[0],
       level: Object.keys(CATALOG["Cambridge IGCSE"].levels)[0],
-      topic: CATALOG["Cambridge IGCSE"].levels.IGCSE[0],
+      topic: "Biology",
+      chapterId: "14",
+      chapterTitle: "Coordination and response",
+      subtopicId: WHOLE_CHAPTER_VALUE,
+      subtopic: "All Chapter 14 subtopics",
+      learningTarget: "Master all 14. Coordination and response subtopics: Coordination and response, Sense organs, Hormones, Homeostasis, Tropic responses.",
       goal: "",
       focus: "",
       pace: "balanced",
-      worksheetLength: 12
+      worksheetLength: 12,
+      topicIds: ["14"]
     };
   }
 
@@ -247,6 +296,11 @@
       request.syllabus,
       request.level,
       request.topic,
+      request.chapterId,
+      request.chapterTitle,
+      request.subtopicId,
+      request.subtopic,
+      request.learningTarget,
       request.goal,
       request.focus,
       request.pace,
@@ -256,6 +310,176 @@
     ]
       .map(normalizeToken)
       .join("::");
+  }
+
+  function chapterLabel(chapter) {
+    const id = safeText(chapter?.id);
+    const title = safeText(chapter?.title);
+    return id && title ? `${id}. ${title}` : title || id || "Selected topic";
+  }
+
+  function subtopicLabel(subtopic) {
+    const id = safeText(subtopic?.id);
+    const title = safeText(subtopic?.title);
+    return id && title ? `${id} ${title}` : title || id || "Selected subtopic";
+  }
+
+  function topicsForSubject(subject) {
+    return Array.isArray(state.syllabusTopicsBySubject[subject])
+      ? state.syllabusTopicsBySubject[subject]
+      : [];
+  }
+
+  function currentChapter() {
+    const subject = safeText(elements.topicSelect.value);
+    const id = safeText(elements.chapterSelect.value);
+    return topicsForSubject(subject).find((chapter) => safeText(chapter.id) === id) || null;
+  }
+
+  function currentSubtopic() {
+    const chapter = currentChapter();
+    const id = safeText(elements.subtopicSelect.value);
+    if (!chapter || id === WHOLE_CHAPTER_VALUE) {
+      return null;
+    }
+    return (chapter.subtopics || []).find((subtopic) => safeText(subtopic.id) === id) || null;
+  }
+
+  function wholeChapterTarget(chapter) {
+    const titles = (chapter?.subtopics || [])
+      .map((subtopic) => safeText(subtopic.title))
+      .filter(Boolean);
+    if (!titles.length) {
+      return `Master ${chapterLabel(chapter)}.`;
+    }
+    return `Master all ${chapterLabel(chapter)} subtopics: ${titles.join(", ")}.`;
+  }
+
+  function learningTargetFor(chapter, subtopic) {
+    if (subtopic) {
+      return `Learn ${subtopicLabel(subtopic)} in ${chapterLabel(chapter)}.`;
+    }
+    return wholeChapterTarget(chapter);
+  }
+
+  function syncInternalTopicSelection() {
+    const chapter = currentChapter();
+    state.selectedTopicIds = chapter?.id ? [safeText(chapter.id)] : [];
+  }
+
+  function syncChapterOptions(preferredChapterId) {
+    const subject = safeText(elements.topicSelect.value);
+    const chapters = topicsForSubject(subject);
+    state.topicalOptions = chapters.map((chapter) => ({
+      id: safeText(chapter.id),
+      title: safeText(chapter.title),
+      subtopics: Array.isArray(chapter.subtopics) ? chapter.subtopics : []
+    })).filter((chapter) => chapter.id && chapter.title);
+    if (!chapters.length) {
+      fillSelectOptions(elements.chapterSelect, [
+        {
+          value: "",
+          label: state.bridgeOnline ? "No syllabus topics found" : "Start the local bridge to load syllabus topics"
+        }
+      ]);
+      syncSubtopicOptions();
+      return;
+    }
+    fillSelectOptions(
+      elements.chapterSelect,
+      chapters.map((chapter) => ({
+        value: safeText(chapter.id),
+        label: chapterLabel(chapter)
+      }))
+    );
+    if (preferredChapterId && chapters.some((chapter) => safeText(chapter.id) === safeText(preferredChapterId))) {
+      elements.chapterSelect.value = safeText(preferredChapterId);
+    } else if (chapters.length) {
+      elements.chapterSelect.value = safeText(chapters[0].id);
+    }
+    syncSubtopicOptions();
+  }
+
+  function syncSubtopicOptions(preferredSubtopicId) {
+    const chapter = currentChapter();
+    const subtopics = Array.isArray(chapter?.subtopics) ? chapter.subtopics : [];
+    if (!chapter) {
+      fillSelectOptions(elements.subtopicSelect, [{ value: "", label: "Select a topic first" }]);
+      syncLearningTargetOptions();
+      return;
+    }
+    const options = [
+      { value: WHOLE_CHAPTER_VALUE, label: `Whole chapter: ${safeText(chapter?.title, "selected topic")}` },
+      ...subtopics.map((subtopic) => ({
+        value: safeText(subtopic.id),
+        label: subtopicLabel(subtopic)
+      }))
+    ];
+    fillSelectOptions(elements.subtopicSelect, options);
+    const preferred = safeText(preferredSubtopicId);
+    if (preferred && options.some((option) => option.value === preferred)) {
+      elements.subtopicSelect.value = preferred;
+    } else {
+      elements.subtopicSelect.value = WHOLE_CHAPTER_VALUE;
+    }
+    syncLearningTargetOptions();
+  }
+
+  function syncLearningTargetOptions(preferredTarget) {
+    const chapter = currentChapter();
+    const selectedSubtopic = currentSubtopic();
+    if (!chapter) {
+      fillSelectOptions(elements.learningTargetSelect, [{ value: "", label: "Select a topic first" }]);
+      state.selectedTopicIds = [];
+      return;
+    }
+
+    const subtopics = Array.isArray(chapter.subtopics) ? chapter.subtopics : [];
+    const options = [
+      {
+        value: wholeChapterTarget(chapter),
+        label: `Whole chapter: ${safeText(chapter.title)}`
+      },
+      ...subtopics.map((subtopic) => {
+        const target = learningTargetFor(chapter, subtopic);
+        return {
+          value: target,
+          label: subtopicLabel(subtopic)
+        };
+      })
+    ];
+    fillSelectOptions(elements.learningTargetSelect, options);
+    const desired = selectedSubtopic ? learningTargetFor(chapter, selectedSubtopic) : safeText(preferredTarget);
+    if (desired && options.some((option) => option.value === desired)) {
+      elements.learningTargetSelect.value = desired;
+    } else if (!selectedSubtopic && preferredTarget && !options.some((option) => option.value === preferredTarget)) {
+      const option = document.createElement("option");
+      option.value = safeText(preferredTarget);
+      option.textContent = safeText(preferredTarget);
+      elements.learningTargetSelect.appendChild(option);
+      elements.learningTargetSelect.value = safeText(preferredTarget);
+    } else {
+      elements.learningTargetSelect.value = options[0]?.value || "";
+    }
+    syncInternalTopicSelection();
+  }
+
+  function syncSubtopicFromLearningTarget() {
+    const chapter = currentChapter();
+    if (!chapter) {
+      return;
+    }
+    const selectedTarget = safeText(elements.learningTargetSelect.value);
+    if (selectedTarget === wholeChapterTarget(chapter)) {
+      elements.subtopicSelect.value = WHOLE_CHAPTER_VALUE;
+      syncInternalTopicSelection();
+      return;
+    }
+    const match = (chapter.subtopics || []).find((subtopic) => learningTargetFor(chapter, subtopic) === selectedTarget);
+    if (match) {
+      elements.subtopicSelect.value = safeText(match.id);
+    }
+    syncInternalTopicSelection();
   }
 
   function syncLevelOptions(preferredLevel) {
@@ -269,13 +493,17 @@
   }
 
   function syncTopicOptions(preferredTopic) {
-    const syllabus = elements.syllabusSelect.value;
-    const level = elements.levelSelect.value;
-    const topics = CATALOG[syllabus].levels[level] || [];
-    fillSelect(elements.topicSelect, topics);
-    if (preferredTopic && topics.includes(preferredTopic)) {
+    const subjects = unique([
+      ...state.syllabusSubjectOrder,
+      ...(CATALOG["Cambridge IGCSE"]?.levels?.IGCSE || [])
+    ]);
+    fillSelect(elements.topicSelect, subjects);
+    if (preferredTopic && subjects.includes(preferredTopic)) {
       elements.topicSelect.value = preferredTopic;
+    } else if (subjects.includes("Biology")) {
+      elements.topicSelect.value = "Biology";
     }
+    syncChapterOptions();
   }
 
   function applyRequestToForm(request) {
@@ -285,18 +513,35 @@
     elements.syllabusSelect.value = request.syllabus || defaultRequest().syllabus;
     syncLevelOptions(request.level);
     syncTopicOptions(request.topic);
+    syncChapterOptions(request.chapterId);
+    syncSubtopicOptions(request.subtopicId);
+    syncLearningTargetOptions(request.learningTarget || request.goal);
     elements.paceSelect.value = request.pace || "balanced";
     elements.worksheetLengthSelect.value = String(request.worksheetLength || 12);
-    elements.goalInput.value = request.goal || "";
     elements.focusInput.value = request.focus || "";
   }
 
   function readRequestFromForm() {
+    const subject = safeText(elements.topicSelect.value);
+    const chapter = currentChapter();
+    const selectedSubtopic = currentSubtopic();
+    const wholeChapter = safeText(elements.subtopicSelect.value) === WHOLE_CHAPTER_VALUE;
+    const chapterTitle = safeText(chapter?.title);
+    const selectedTarget = safeText(elements.learningTargetSelect.value) || learningTargetFor(chapter, selectedSubtopic);
+    const subtopicTitle = wholeChapter
+      ? `All ${chapterLabel(chapter)} subtopics`
+      : subtopicLabel(selectedSubtopic);
+    syncInternalTopicSelection();
     return {
       syllabus: safeText(elements.syllabusSelect.value),
       level: safeText(elements.levelSelect.value),
-      topic: safeText(elements.topicSelect.value),
-      goal: safeText(elements.goalInput.value),
+      topic: subject,
+      chapterId: safeText(chapter?.id),
+      chapterTitle,
+      subtopicId: wholeChapter ? WHOLE_CHAPTER_VALUE : safeText(selectedSubtopic?.id),
+      subtopic: subtopicTitle,
+      learningTarget: selectedTarget,
+      goal: selectedTarget,
       focus: safeText(elements.focusInput.value),
       pace: safeText(elements.paceSelect.value, "balanced"),
       worksheetLength: Number(elements.worksheetLengthSelect.value) || 12,
@@ -318,6 +563,15 @@
     return map[safeText(request.topic)] || "";
   }
 
+  function contentTopicForRequest(request) {
+    return safeText(request.chapterTitle) || safeText(request.topic);
+  }
+
+  function contentSubtopicForRequest(request) {
+    const value = safeText(request.subtopic);
+    return value || contentTopicForRequest(request);
+  }
+
   function setSelectedTopicIds(topicIds) {
     state.selectedTopicIds = [...new Set((topicIds || []).map((item) => safeText(item)).filter(Boolean))];
     elements.officialTopicChoices.querySelectorAll("input[type='checkbox']").forEach((input) => {
@@ -326,31 +580,8 @@
   }
 
   function renderOfficialTopicChoices() {
-    if (!state.topicalOptions.length) {
-      elements.officialTopicWrap.hidden = true;
-      elements.officialTopicChoices.innerHTML = "";
-      state.selectedTopicIds = [];
-      return;
-    }
-
-    elements.officialTopicWrap.hidden = false;
-    elements.officialTopicChoices.innerHTML = state.topicalOptions
-      .map(
-        (option) => `
-          <label class="topic-choice">
-            <input type="checkbox" value="${escapeHtml(option.id)}" ${state.selectedTopicIds.includes(option.id) ? "checked" : ""}>
-            <span>${escapeHtml(option.title)}</span>
-          </label>
-        `
-      )
-      .join("");
-
-    elements.officialTopicChoices.querySelectorAll("input[type='checkbox']").forEach((input) => {
-      input.addEventListener("change", () => {
-        const next = Array.from(elements.officialTopicChoices.querySelectorAll("input[type='checkbox']:checked")).map((node) => node.value);
-        state.selectedTopicIds = next;
-      });
-    });
+    elements.officialTopicWrap.hidden = true;
+    elements.officialTopicChoices.innerHTML = "";
   }
 
   function renderRecommendations() {
@@ -410,10 +641,10 @@
       const params = new URLSearchParams({
         syllabus: request.syllabus,
         level: request.level,
-        topic: request.topic,
+        topic: contentTopicForRequest(request),
         subject,
         goal: request.goal,
-        focus: request.focus
+        focus: [request.subtopic, request.focus].filter(Boolean).join(", ")
       });
       const response = await fetch(`${API_BASE}/api/study-pack/recommend?${params.toString()}`);
       if (!response.ok) {
@@ -424,7 +655,7 @@
       const suggestedTopicIds = Array.isArray(payload.recommendedTopicIds)
         ? payload.recommendedTopicIds.map((item) => safeText(item)).filter(Boolean)
         : [];
-      if (suggestedTopicIds.length && state.topicalOptions.length) {
+      if (!state.selectedTopicIds.length && suggestedTopicIds.length && state.topicalOptions.length) {
         const validIds = suggestedTopicIds.filter((id) => state.topicalOptions.some((option) => option.id === id));
         if (validIds.length) {
           setSelectedTopicIds(validIds);
@@ -441,7 +672,10 @@
     const request = readRequestFromForm();
     const subject = generatorSubjectForRequest(request);
     if (!state.bridgeOnline || !subject) {
-      state.topicalOptions = [];
+      syncTopicOptions(request.topic);
+      syncChapterOptions(request.chapterId);
+      syncSubtopicOptions(request.subtopicId);
+      syncLearningTargetOptions(request.learningTarget);
       renderOfficialTopicChoices();
       return;
     }
@@ -453,27 +687,40 @@
       }
       const payload = await response.json();
       const subjects = payload?.topical?.subjects || [];
-      const match = subjects.find((item) => safeText(item.label) === subject || safeText(item.value) === subject);
-      const options = Array.isArray(match?.topicPacks)
-        ? match.topicPacks.map((item) => ({ id: safeText(item.id), title: safeText(item.title) })).filter((item) => item.id && item.title)
-        : [];
-      state.topicalOptions = options;
-      if (TRIAL_BIOLOGY_14 && subject === "Biology" && options.some((item) => item.id === "14")) {
-        state.selectedTopicIds = ["14"];
-        renderOfficialTopicChoices();
-        return;
-      }
-      const preferred = state.selectedTopicIds.filter((item) => options.some((option) => option.id === item));
-      state.selectedTopicIds = preferred.length ? preferred : options.slice(0, 1).map((item) => item.id);
-      renderOfficialTopicChoices();
-      if (state.recommendations?.recommendedTopicIds?.length) {
-        const validIds = state.recommendations.recommendedTopicIds.filter((item) => options.some((option) => option.id === item));
-        if (validIds.length) {
-          setSelectedTopicIds(validIds);
+      const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
+      const nextSubjects = [];
+      subjects.forEach((item) => {
+        const label = safeText(item.label || item.value);
+        if (!label) {
+          return;
         }
-      }
+        nextSubjects.push(label);
+        nextTopicsBySubject[label] = Array.isArray(item.topicPacks)
+          ? item.topicPacks
+              .map((pack) => ({
+                id: safeText(pack.id),
+                title: safeText(pack.title),
+                subtopics: Array.isArray(pack.subtopics)
+                  ? pack.subtopics
+                      .map((subtopic) => ({ id: safeText(subtopic.id), title: safeText(subtopic.title) }))
+                      .filter((subtopic) => subtopic.id && subtopic.title)
+                  : []
+              }))
+              .filter((pack) => pack.id && pack.title)
+          : [];
+      });
+      state.syllabusSubjectOrder = unique([...nextSubjects, ...Object.keys(FALLBACK_SYLLABUS_TOPICS)]);
+      state.syllabusTopicsBySubject = nextTopicsBySubject;
+      syncTopicOptions(request.topic);
+      syncChapterOptions(request.chapterId);
+      syncSubtopicOptions(request.subtopicId);
+      syncLearningTargetOptions(request.learningTarget);
+      renderOfficialTopicChoices();
     } catch (error) {
-      state.topicalOptions = [];
+      syncTopicOptions(request.topic);
+      syncChapterOptions(request.chapterId);
+      syncSubtopicOptions(request.subtopicId);
+      syncLearningTargetOptions(request.learningTarget);
       renderOfficialTopicChoices();
     }
   }
@@ -611,14 +858,17 @@
   }
 
   function buildFocusItems(request, profile) {
+    const contentTopic = contentTopicForRequest(request);
+    const contentSubtopic = contentSubtopicForRequest(request);
     return unique(
       [
         ...(Array.isArray(request.recommendedFocus) ? request.recommendedFocus : []),
+        contentSubtopic,
         ...splitIdeas(request.focus),
-        ...splitIdeas(request.goal),
+        ...splitIdeas(request.learningTarget || request.goal),
         ...profile.starters,
-        `${request.topic} inside ${request.syllabus} ${request.level}`,
-        `Common exam traps in ${request.topic}`
+        `${contentTopic} inside ${request.syllabus} ${request.level}`,
+        `Common exam traps in ${contentTopic}`
       ]
         .map((item) => sentenceCase(item.replace(/\.$/, "")))
         .filter((item) => item.length > 10)
@@ -626,9 +876,10 @@
   }
 
   function buildImportantPoints(request, profile, focusItems) {
+    const contentTopic = contentTopicForRequest(request);
     return [
-      `Start ${request.topic} by locking in ${profile.centralQuestion}.`,
-      `Use the student goal as the filter: ${request.goal}.`,
+      `Start ${contentTopic} by locking in ${profile.centralQuestion}.`,
+      `Use the selected syllabus target as the filter: ${request.learningTarget || request.goal}.`,
       `Turn each focus area into one definition, one example, and one quick self-check.`,
       `Treat the main trap as a deliberate review target: ${profile.trap}.`,
       `Move through Foundation, Core, and Stretch until missed questions stop returning.`,
@@ -637,17 +888,18 @@
   }
 
   function buildNoteCards(request, profile, focusItems) {
-    const first = focusItems[0] || `core ideas in ${request.topic}`;
-    const second = focusItems[1] || `worked examples in ${request.topic}`;
-    const third = focusItems[2] || `common mistakes in ${request.topic}`;
+    const contentTopic = contentTopicForRequest(request);
+    const first = focusItems[0] || `core ideas in ${contentTopic}`;
+    const second = focusItems[1] || `worked examples in ${contentTopic}`;
+    const third = focusItems[2] || `common mistakes in ${contentTopic}`;
 
     return [
       {
         title: "Big picture",
         points: [
-          `${request.topic} is being studied here as a usable skill, not just a fact list.`,
+          `${contentTopic} is being studied here as a usable skill, not just a fact list.`,
           `The first checkpoint is whether the student can explain ${profile.centralQuestion}.`,
-          `Keep linking every example back to the stated outcome: ${request.goal}.`
+          `Keep linking every example back to the selected syllabus target: ${request.learningTarget || request.goal}.`
         ]
       },
       {
@@ -678,7 +930,8 @@
   }
 
   function buildDiagramSvg(request, profile, focusItems) {
-    const nodes = unique([request.topic, ...focusItems.slice(0, 4)]).slice(0, 5);
+    const contentTopic = contentTopicForRequest(request);
+    const nodes = unique([contentTopic, ...focusItems.slice(0, 4)]).slice(0, 5);
     const positions = [
       { x: 330, y: 120, width: 180, height: 60, fill: "#fff4e8", stroke: "#ef5b30" },
       { x: 60, y: 60, width: 180, height: 56, fill: "#fffdf8", stroke: "#d8c5ae" },
@@ -725,7 +978,7 @@
       .join("");
 
     return `
-      <svg viewBox="0 0 660 310" role="img" aria-label="${escapeHtml(profile.diagramLabel)} for ${escapeHtml(request.topic)}">
+      <svg viewBox="0 0 660 310" role="img" aria-label="${escapeHtml(profile.diagramLabel)} for ${escapeHtml(contentTopic)}">
         <rect x="1" y="1" width="658" height="308" rx="24" fill="#f9f1e5" stroke="#ead9c4"></rect>
         <text x="28" y="34" font-size="14" font-family="Sora, sans-serif" fill="#5f6c67">${escapeHtml(profile.diagramLabel)}</text>
         ${connectorMarkup}
@@ -735,8 +988,9 @@
   }
 
   function buildDistractors(request, focusItem, profile) {
+    const contentTopic = contentTopicForRequest(request);
     return unique([
-      `Memorise ${request.topic} without explaining the reasoning`,
+      `Memorise ${contentTopic} without explaining the reasoning`,
       `Skip the setup and go straight to the answer`,
       `Treat ${focusItem.toLowerCase()} as a fact list with no application`,
       `Ignore the main trap: ${profile.trap}`,
@@ -762,11 +1016,12 @@
   }
 
   function laneTemplate(request, lane, focusItem) {
+    const contentTopic = contentTopicForRequest(request);
     if (lane === "Foundation") {
       return {
         prompt: `Which move best shows a student understands the basic idea behind ${focusItem.toLowerCase()}?`,
         concept: "Foundation questions check whether the student can identify the rule before applying it.",
-        correct: `State the idea clearly and connect it to one clean example in ${request.topic}`,
+        correct: `State the idea clearly and connect it to one clean example in ${contentTopic}`,
         explanation: "That answer shows the student understands the idea before trying harder application."
       };
     }
@@ -793,13 +1048,13 @@
     const distractors = buildDistractors(request, focusItem, profile);
     const choicePack = buildChoices(template.correct, distractors, index);
     return {
-      id: `${slugify(request.topic)}-${slugify(lane)}-${index + 1}`,
+      id: `${slugify(contentTopicForRequest(request))}-${slugify(lane)}-${index + 1}`,
       lane,
       prompt: template.prompt,
       concept: template.concept,
       choices: choicePack.choices,
       answer: choicePack.answerIndex,
-      explanation: `${template.explanation} Keep ${focusItem.toLowerCase()} tied to the student's goal: ${request.goal}.`
+      explanation: `${template.explanation} Keep ${focusItem.toLowerCase()} tied to the selected syllabus target: ${request.learningTarget || request.goal}.`
     };
   }
 
@@ -817,7 +1072,7 @@
         buildQuizQuestion(
           request,
           lane,
-          focusItems[index % focusItems.length] || request.topic,
+          focusItems[index % focusItems.length] || contentTopicForRequest(request),
           profile,
           index
         )
@@ -828,9 +1083,10 @@
   }
 
   function buildWorksheetQuestion(request, lane, focusItem, profile, index) {
+    const contentTopic = contentTopicForRequest(request);
     const marks = lane === "Foundation" ? 2 : lane === "Core" ? 3 : 4;
     const promptMap = {
-      Foundation: `Define or explain ${focusItem.toLowerCase()} in the context of ${request.topic}.`,
+      Foundation: `Define or explain ${focusItem.toLowerCase()} in the context of ${contentTopic}.`,
       Core: `Apply ${focusItem.toLowerCase()} to a short exam-style example and show the method.`,
       Stretch: `Evaluate a harder case involving ${focusItem.toLowerCase()} and justify the best answer.`
     };
@@ -869,7 +1125,7 @@
 
     for (let index = 0; index < total; index += 1) {
       const lane = lanes[index % lanes.length];
-      const focusItem = focusItems[index % focusItems.length] || request.topic;
+      const focusItem = focusItems[index % focusItems.length] || contentTopicForRequest(request);
       questions.push(buildWorksheetQuestion(request, lane, focusItem, profile, index));
     }
 
@@ -880,7 +1136,7 @@
     });
 
     return {
-      intro: `Extra practice for ${request.topic}. Work through the questions in order, then upload the completed worksheet for marking when the local autograder bridge is available.`,
+      intro: `Extra practice for ${contentTopicForRequest(request)}. Work through the questions in order, then upload the completed worksheet for marking when the local autograder bridge is available.`,
       questions,
       answerKeyLines,
       rubricText: answerKeyLines.join("\n\n")
@@ -888,7 +1144,8 @@
   }
 
   function buildStudyPack(request) {
-    const profile = buildTopicProfile(request.topic);
+    const contentTopic = contentTopicForRequest(request);
+    const profile = buildTopicProfile(contentTopic);
     const focusItems = buildFocusItems(request, profile);
     const importantPoints = buildImportantPoints(request, profile, focusItems);
     const noteCards = buildNoteCards(request, profile, focusItems);
@@ -897,14 +1154,14 @@
     const totalQuestions = Object.values(quizLanes).reduce((sum, lane) => sum + lane.length, 0);
 
     return {
-      id: `pack-${slugify(request.topic)}-${Date.now()}`,
+      id: `pack-${slugify(contentTopic)}-${Date.now()}`,
       cacheKey: buildRequestKey(request),
       generatedAt: new Date().toISOString(),
       source: "local",
       request,
       recommendations: state.recommendations,
-      title: `${request.topic} Study Pack`,
-      subtitle: `${request.syllabus} | ${request.level} | ${request.topic}`,
+      title: `${contentTopic} Study Pack`,
+      subtitle: `${request.syllabus} | ${request.level} | ${request.topic} | ${contentSubtopicForRequest(request)}`,
       notes: {
         importantPoints,
         noteCards,
@@ -920,7 +1177,8 @@
   }
 
   function normalizeAiPack(rawPack, request) {
-    const profile = buildTopicProfile(request.topic);
+    const contentTopic = contentTopicForRequest(request);
+    const profile = buildTopicProfile(contentTopic);
     const focusItems = Array.isArray(rawPack?.notes?.focusItems) && rawPack.notes.focusItems.length
       ? rawPack.notes.focusItems
       : buildFocusItems(request, profile);
@@ -937,14 +1195,14 @@
     const answerKeyLines = Array.isArray(worksheet.answerKeyLines) ? worksheet.answerKeyLines : [];
 
     return {
-      id: safeText(rawPack.id) || `pack-${slugify(request.topic)}-${Date.now()}`,
+      id: safeText(rawPack.id) || `pack-${slugify(contentTopic)}-${Date.now()}`,
       cacheKey: buildRequestKey(request),
       generatedAt: safeText(rawPack.generatedAt) || new Date().toISOString(),
       source: safeText(rawPack.provider, "ai"),
       request,
       recommendations: rawPack.recommendations || state.recommendations || null,
-      title: safeText(rawPack.title) || `${request.topic} Study Pack`,
-      subtitle: safeText(rawPack.subtitle) || `${request.syllabus} | ${request.level} | ${request.topic}`,
+      title: safeText(rawPack.title) || `${contentTopic} Study Pack`,
+      subtitle: safeText(rawPack.subtitle) || `${request.syllabus} | ${request.level} | ${request.topic} | ${contentSubtopicForRequest(request)}`,
       notes: {
         importantPoints,
         noteCards,
@@ -956,7 +1214,7 @@
         totalQuestions
       },
       worksheet: {
-        intro: safeText(worksheet.intro) || `Extra practice for ${request.topic}.`,
+        intro: safeText(worksheet.intro) || `Extra practice for ${contentTopic}.`,
         questions: Array.isArray(worksheet.questions) ? worksheet.questions : [],
         answerKeyLines,
         rubricText: safeText(worksheet.rubricText) || answerKeyLines.join("\n\n"),
@@ -1312,8 +1570,13 @@
             syllabus: request.syllabus,
             curriculum: request.syllabus,
             level: request.level,
-            topic: request.topic,
+            topic: contentTopicForRequest(request),
             subject: request.topic,
+            subtopic: contentSubtopicForRequest(request),
+            chapterId: request.chapterId,
+            chapterTitle: request.chapterTitle,
+            subtopicId: request.subtopicId,
+            learningTarget: request.learningTarget,
             goal: request.goal,
             description: request.goal,
             focus: request.focus,
@@ -1641,8 +1904,8 @@
         curriculum: state.currentPack.request.syllabus,
         level: state.currentPack.request.level,
         subject: state.currentPack.request.topic,
-        topic: state.currentPack.request.topic,
-        subtopic: state.currentPack.request.topic,
+        topic: contentTopicForRequest(state.currentPack.request),
+        subtopic: contentSubtopicForRequest(state.currentPack.request),
         description: state.currentPack.request.goal,
         answerFormat: "Worksheet upload",
         markScheme: state.currentPack.worksheet.rubricText,
@@ -1710,10 +1973,25 @@
       await loadRecommendations();
     });
     elements.topicSelect.addEventListener("change", async () => {
+      syncChapterOptions();
+      syncSubtopicOptions();
+      syncLearningTargetOptions();
       await loadOfficialTopicOptions();
       await loadRecommendations();
     });
-    elements.goalInput.addEventListener("blur", loadRecommendations);
+    elements.chapterSelect.addEventListener("change", async () => {
+      syncSubtopicOptions();
+      syncLearningTargetOptions();
+      await loadRecommendations();
+    });
+    elements.subtopicSelect.addEventListener("change", async () => {
+      syncLearningTargetOptions();
+      await loadRecommendations();
+    });
+    elements.learningTargetSelect.addEventListener("change", async () => {
+      syncSubtopicFromLearningTarget();
+      await loadRecommendations();
+    });
     elements.focusInput.addEventListener("blur", loadRecommendations);
 
     elements.useRecommendationsButton.addEventListener("click", () => {
@@ -1763,9 +2041,11 @@
     elements.syllabusSelect.value = request.syllabus;
     syncLevelOptions(request.level);
     syncTopicOptions(request.topic);
+    syncChapterOptions(request.chapterId);
+    syncSubtopicOptions(request.subtopicId);
+    syncLearningTargetOptions(request.learningTarget || request.goal);
     elements.paceSelect.value = request.pace;
     elements.worksheetLengthSelect.value = String(request.worksheetLength);
-    elements.goalInput.value = request.goal || "";
     elements.focusInput.value = request.focus || "";
     renderOfficialTopicChoices();
   }

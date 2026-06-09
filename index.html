@@ -21,7 +21,7 @@
           <p class="eyebrow">IC Education</p>
           <h1>Simple study site builder</h1>
           <p class="hub-copy">
-            Pick the syllabus, level, and topic. Generate one clean learning pack with notes,
+            Pick the subject, syllabus topic, and exact subtopic. Generate one clean learning pack with notes,
             quiz lanes, and a worksheet that stays cached for the next visit.
           </p>
         </div>
@@ -35,25 +35,37 @@
         <div class="study-card-head">
           <div>
             <p class="eyebrow">Builder</p>
-            <h2>Describe what the student should learn</h2>
+            <h2>Choose from the syllabus</h2>
           </div>
         </div>
 
         <form id="studyForm" class="study-form">
-          <div class="study-grid">
+          <div class="study-grid course-context" hidden>
             <label class="field">
               <span>Syllabus</span>
-              <select id="syllabusSelect" required></select>
+              <select id="syllabusSelect"></select>
             </label>
 
             <label class="field">
               <span>Level</span>
-              <select id="levelSelect" required></select>
+              <select id="levelSelect"></select>
+            </label>
+          </div>
+
+          <div class="study-grid">
+            <label class="field">
+              <span>Subject</span>
+              <select id="topicSelect" required></select>
             </label>
 
             <label class="field">
-              <span>Topic</span>
-              <select id="topicSelect" required></select>
+              <span>Topic / chapter</span>
+              <select id="chapterSelect" required></select>
+            </label>
+
+            <label class="field">
+              <span>Subtopic</span>
+              <select id="subtopicSelect" required></select>
             </label>
           </div>
 
@@ -79,20 +91,16 @@
 
           <label class="field">
             <span>What should the student learn?</span>
-            <textarea
-              id="goalInput"
-              rows="4"
-              placeholder="Example: explain how market efficiency affects active management, show the key formulas, and give exam-style traps to avoid."
-              required
-            ></textarea>
+            <select id="learningTargetSelect" required></select>
+            <small class="hint">This list comes from the official syllabus subtopics in the selected chapter.</small>
           </label>
 
           <label class="field">
-            <span>Optional syllabus lines, subtopics, or weak areas</span>
+            <span>Extra weak areas or tutor notes (optional)</span>
             <textarea
               id="focusInput"
               rows="4"
-              placeholder="Example: weak on semi-strong form, event studies, and how anomalies affect alpha."
+              placeholder="Example: weak on the pupil reflex, reflex arcs, and blood glucose control."
             ></textarea>
           </label>
 
