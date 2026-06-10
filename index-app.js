@@ -1852,6 +1852,27 @@
     elements.packMeta.textContent = sourceLabel;
   }
 
+  function buildPackSummary(pack) {
+    const request = pack?.request || {};
+    const coverageCount = requestCoverageLabels(request).length;
+    const focusItems = splitIdeas(request.focus || "");
+    const parts = [
+      safeText(request.syllabus),
+      safeText(request.level),
+      safeText(request.topic)
+    ].filter(Boolean);
+
+    if (coverageCount) {
+      parts.push(`${coverageCount} selected point${coverageCount === 1 ? "" : "s"}`);
+    }
+    if (focusItems.length) {
+      const preview = focusItems.slice(0, 2).join(", ");
+      const suffix = focusItems.length > 2 ? ` +${focusItems.length - 2} more` : "";
+      parts.push(`Focus: ${preview}${suffix}`);
+    }
+    return parts.join(" | ");
+  }
+
   function setActiveTab(tabName) {
     state.currentTab = tabName;
     elements.studyTabs.forEach((button) => {
@@ -2094,7 +2115,7 @@
     initializeQuizSessions(pack);
     elements.studyWorkspace.hidden = false;
     elements.packTitle.textContent = pack.title;
-    elements.packSubtitle.textContent = `${pack.subtitle} | ${pack.request.goal}`;
+    elements.packSubtitle.textContent = buildPackSummary(pack);
     elements.notesCount.textContent = String(pack.notes.noteCards.length);
     elements.questionCount.textContent = String(pack.quiz.totalQuestions);
     elements.worksheetCount.textContent = String(pack.worksheet.questions.length);
@@ -2170,6 +2191,7 @@
     store[key] = pack;
     saveCacheStore(store);
     renderPack(pack, "fresh");
+    elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function clearAllCache() {
