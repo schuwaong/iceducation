@@ -2715,10 +2715,39 @@
     renderOfficialTopicChoices();
   }
 
+  async function initializeMotionRuntime() {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    try {
+      const { animate, hover, stagger, inView } = await import("https://cdn.jsdelivr.net/npm/motion@latest/+esm");
+      document.documentElement.classList.add("motion-ready");
+
+      animate(
+        ".study-hero, .study-builder-card, .study-hero-status .study-pill",
+        { opacity: [0, 1], y: [20, 0], filter: ["blur(10px)", "blur(0px)"] },
+        { duration: 0.72, delay: stagger(0.08), easing: [0.16, 1, 0.3, 1] }
+      );
+
+      inView(".panel-card, .summary-card, .study-panel", (element) => {
+        animate(element, { opacity: [0, 1], y: [24, 0] }, { duration: 0.64, easing: [0.16, 1, 0.3, 1] });
+      }, { margin: "0px 0px -12% 0px" });
+
+      document.querySelectorAll("button, .study-tab, .lane-pill, .summary-card").forEach((element) => {
+        hover(element, () => {
+          animate(element, { scale: 1.012 }, { type: "spring", stiffness: 430, damping: 31 });
+          return () => animate(element, { scale: 1 }, { type: "spring", stiffness: 430, damping: 31 });
+        });
+      });
+    } catch (error) {
+      document.documentElement.classList.remove("motion-ready");
+    }
+  }
+
   initializeForm();
   bindEvents();
   updateCacheStatus("", null);
   restoreLastPack();
   checkBridge();
   loadRecommendations();
+  initializeMotionRuntime();
 })();
