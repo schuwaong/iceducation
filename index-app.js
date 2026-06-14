@@ -283,6 +283,28 @@
     window.localStorage.setItem(CACHE_STORE_KEY, JSON.stringify(store));
   }
 
+  function packHasRenderableStudyContent(pack) {
+    const noteCards = Array.isArray(pack?.notes?.noteCards) ? pack.notes.noteCards : [];
+    const lanes = pack?.quiz?.lanes || {};
+    const laneQuestions = ["Foundation", "Core", "Stretch"].flatMap((lane) =>
+      Array.isArray(lanes[lane]) ? lanes[lane] : []
+    );
+    return noteCards.some((card) => Array.isArray(card?.points) && card.points.length)
+      && laneQuestions.some((question) => Array.isArray(question?.choices) && question.choices.length >= 3);
+  }
+
+  function removeCachedPack(cacheKey) {
+    if (!cacheKey) {
+      return;
+    }
+    const store = loadCacheStore();
+    delete store[cacheKey];
+    saveCacheStore(store);
+    if (window.localStorage.getItem(LAST_PACK_KEY) === cacheKey) {
+      window.localStorage.removeItem(LAST_PACK_KEY);
+    }
+  }
+
   function persistCurrentPack() {
     if (!state.currentPack?.cacheKey) {
       return;
@@ -1730,6 +1752,23 @@
     };
   }
 
+  function buildPrebuiltPack(request) {
+    const finder = window.IC_EDUCATE_PREBUILT_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function createLaneSession(questions) {
     return {
       queue: questions.map((question) => question.id),
@@ -1845,6 +1884,11 @@
     if (source === "cache") {
       elements.cacheStatus.textContent = `Loaded from cache | ${time}`;
       elements.packMeta.textContent = "Loaded from cache";
+      return;
+    }
+    if (source === "prebuilt") {
+      elements.cacheStatus.textContent = `Loaded from prebuilt cache | ${time}`;
+      elements.packMeta.textContent = "Prebuilt cache";
       return;
     }
     const sourceLabel = pack.source && pack.source !== "local" ? `AI generated (${pack.source})` : "Freshly generated";
@@ -2130,12 +2174,25 @@
   async function generateOrLoadPack(request) {
     const key = buildRequestKey(request);
     const store = loadCacheStore();
-    if (store[key]) {
+    if (store[key] && packHasRenderableStudyContent(store[key])) {
       renderPack(store[key], "cache");
       return;
     }
+    if (store[key]) {
+      delete store[key];
+      saveCacheStore(store);
+    }
 
     let pack;
+    const prebuiltPack = buildPrebuiltPack(request);
+    if (prebuiltPack) {
+      store[key] = prebuiltPack;
+      saveCacheStore(store);
+      renderPack(prebuiltPack, "prebuilt");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
     if (state.bridgeOnline && state.aiGenerationReady) {
       elements.generateButton.disabled = true;
       elements.generateButton.textContent = "Generating with AI...";
@@ -2177,6 +2234,9 @@
           throw new Error(payload.error || `HTTP ${response.status}`);
         }
         pack = normalizeAiPack(payload, request);
+        if (!packHasRenderableStudyContent(pack)) {
+          throw new Error("AI generation returned no renderable notes or quiz questions.");
+        }
       } catch (error) {
         pack = buildStudyPack(request);
         pack.fallbackReason = safeText(error.message || "AI generation failed");
@@ -2621,6 +2681,10 @@
       return;
     }
     const pack = store[lastKey];
+    if (!packHasRenderableStudyContent(pack)) {
+      removeCachedPack(lastKey);
+      return;
+    }
     applyRequestToForm(pack.request);
     state.recommendations = pack.recommendations || null;
     renderRecommendations();

@@ -340,22 +340,7 @@ def _generate_study_pack_with_deepseek(payload: dict[str, Any], *, retry_index: 
     return parsed
 
 
-def generate_ai_study_pack(payload: dict[str, Any]) -> dict[str, Any]:
-    request_data = _study_pack_request(payload)
-    errors: list[str] = []
-    ai_payload: dict[str, Any] | None = None
-
-    for retry_index in range(3):
-        try:
-            ai_payload = _generate_study_pack_with_deepseek(payload, retry_index=retry_index)
-            break
-        except DeepSeekError as exc:
-            errors.append(str(exc))
-
-    if ai_payload is None:
-        reason = "; ".join(errors) if errors else "No AI provider is configured."
-        raise DeepSeekError(f"Could not generate the study pack. {reason}")
-
+def _build_study_pack_response(ai_payload: dict[str, Any], request_data: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     note_cards = _normalize_note_cards(ai_payload.get("noteCards"))[:4]
     important_points = _normalize_string_list(ai_payload.get("importantPoints"))
     focus_items = _normalize_string_list(ai_payload.get("focusItems"))
@@ -405,6 +390,21 @@ def generate_ai_study_pack(payload: dict[str, Any]) -> dict[str, Any]:
             "libraryMatches": [],
         },
     }
+
+
+def generate_ai_study_pack(payload: dict[str, Any]) -> dict[str, Any]:
+    request_data = _study_pack_request(payload)
+    errors: list[str] = []
+
+    for retry_index in range(3):
+        try:
+            ai_payload = _generate_study_pack_with_deepseek(payload, retry_index=retry_index)
+            return _build_study_pack_response(ai_payload, request_data, payload)
+        except DeepSeekError as exc:
+            errors.append(str(exc))
+
+    reason = "; ".join(errors) if errors else "No AI provider is configured."
+    raise DeepSeekError(f"Could not generate the study pack. {reason}")
 
 
 @app.get("/")
