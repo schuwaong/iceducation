@@ -1,6 +1,6 @@
 (function () {
-  const CACHE_STORE_KEY = "ice-study-pack-cache-v4";
-  const LAST_PACK_KEY = "ice-study-pack-last-v4";
+  const CACHE_STORE_KEY = "ice-study-pack-cache-v6";
+  const LAST_PACK_KEY = "ice-study-pack-last-v6";
   const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
   const TRIAL_QUERY = new URLSearchParams(window.location.search);
   const TRIAL_BIOLOGY_14 = TRIAL_QUERY.get("trial") === "bio14";
@@ -1880,11 +1880,11 @@
     const contentTopic = contentTopicForRequest(request);
     const nodes = unique([contentTopic, ...focusItems.slice(0, 4)]).slice(0, 5);
     const positions = [
-      { x: 330, y: 120, width: 180, height: 60, fill: "#fff4e8", stroke: "#ef5b30" },
-      { x: 60, y: 60, width: 180, height: 56, fill: "#fffdf8", stroke: "#d8c5ae" },
-      { x: 60, y: 190, width: 180, height: 56, fill: "#fffdf8", stroke: "#d8c5ae" },
-      { x: 420, y: 40, width: 180, height: 56, fill: "#fffdf8", stroke: "#d8c5ae" },
-      { x: 420, y: 210, width: 180, height: 56, fill: "#fffdf8", stroke: "#d8c5ae" }
+      { x: 330, y: 120, width: 180, height: 60 },
+      { x: 60, y: 60, width: 180, height: 56 },
+      { x: 60, y: 190, width: 180, height: 56 },
+      { x: 420, y: 40, width: 180, height: 56 },
+      { x: 420, y: 210, width: 180, height: 56 }
     ];
 
     const connectorMarkup = [
@@ -1901,7 +1901,13 @@
         const sourceY = source.y + source.height / 2;
         const targetX = targetIndex < 3 ? target.x + target.width : target.x;
         const targetY = target.y + target.height / 2;
-        return `<line x1="${sourceX}" y1="${sourceY}" x2="${targetX}" y2="${targetY}" stroke="#d1b99d" stroke-width="2" stroke-linecap="round"></line>`;
+        const delay = (targetIndex - 1) * 0.35;
+        return `
+          <line class="concept-link" style="--delay: ${delay}s" x1="${sourceX}" y1="${sourceY}" x2="${targetX}" y2="${targetY}" stroke-width="2" stroke-linecap="round"></line>
+          <circle class="concept-pulse" style="--delay: ${delay + 0.28}s" r="5">
+            <animateMotion dur="3.2s" begin="${delay}s" repeatCount="indefinite" path="M ${sourceX} ${sourceY} L ${targetX} ${targetY}"></animateMotion>
+          </circle>
+        `;
       })
       .join("");
 
@@ -1913,24 +1919,50 @@
           .map((line, lineIndex) => {
             const x = box.x + box.width / 2;
             const y = box.y + 24 + lineIndex * 14;
-            return `<text x="${x}" y="${y}" text-anchor="middle" font-size="12" font-family="Sora, sans-serif" fill="#17312a">${escapeHtml(line)}</text>`;
+            return `<text class="concept-text" x="${x}" y="${y}" text-anchor="middle" font-size="12" font-family="Sora, sans-serif">${escapeHtml(line)}</text>`;
           })
           .join("");
 
         return `
-          <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="16" fill="${box.fill}" stroke="${box.stroke}" stroke-width="1.5"></rect>
+          <g class="concept-node concept-node-${index}" style="--delay: ${index * 0.18}s">
+          <rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="16"></rect>
           ${labelLines}
+          </g>
         `;
       })
       .join("");
 
     return `
-      <svg viewBox="0 0 660 310" role="img" aria-label="${escapeHtml(profile.diagramLabel)} for ${escapeHtml(contentTopic)}">
-        <rect x="1" y="1" width="658" height="308" rx="24" fill="#f9f1e5" stroke="#ead9c4"></rect>
-        <text x="28" y="34" font-size="14" font-family="Sora, sans-serif" fill="#5f6c67">${escapeHtml(profile.diagramLabel)}</text>
+      <svg class="animated-concept-map" viewBox="0 0 660 310" role="img" aria-label="${escapeHtml(profile.diagramLabel)} for ${escapeHtml(contentTopic)}">
+        <defs>
+          <linearGradient id="conceptSurface" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="#0c1829"></stop>
+            <stop offset="100%" stop-color="#07101c"></stop>
+          </linearGradient>
+        </defs>
+        <rect class="concept-map-bg" x="1" y="1" width="658" height="308" rx="24"></rect>
+        <text class="concept-map-label" x="28" y="34">${escapeHtml(profile.diagramLabel)}: watch the idea travel</text>
         ${connectorMarkup}
         ${nodeMarkup}
       </svg>
+    `;
+  }
+
+  function buildFeedbackAnimation(result, question) {
+    const steps = result?.correct
+      ? ["Read", "Match", "Lock"]
+      : ["Spot", "Fix", "Retry"];
+    const concept = safeText(question?.concept || "Concept check");
+    const answer = Array.isArray(question?.choices) ? safeText(question.choices[question.answer]) : "";
+    return `
+      <div class="feedback-animation" aria-hidden="true">
+        ${steps.map((step, index) => `
+          <span class="feedback-step" style="--delay: ${index * 0.16}s">${escapeHtml(step)}</span>
+        `).join("")}
+      </div>
+      <p class="feedback-copy">${escapeHtml(result?.explanation || "")}</p>
+      ${answer ? `<p class="feedback-answer"><span>Anchor</span>${escapeHtml(answer)}</p>` : ""}
+      <p class="feedback-mini">${escapeHtml(concept)}</p>
     `;
   }
 
@@ -2096,15 +2128,103 @@
     const selectedPoints = coverage.length ? coverage : focusItems;
     const mainFocus = selectedPoints[0] || contentTopic;
     const secondaryFocus = selectedPoints[1] || focusItems[1] || contentTopic;
+    const thirdFocus = selectedPoints[2] || focusItems[2] || secondaryFocus;
+    const fourthFocus = selectedPoints[3] || focusItems[3] || mainFocus;
     const worksheetCount = Array.isArray(worksheet?.questions) ? worksheet.questions.length : Number(request.worksheetLength) || 12;
     const paceLabel = request.pace === "guided"
       ? "guided foundation-first pace"
       : request.pace === "fast"
         ? "fast-track exam pace"
         : "balanced concept and practice pace";
+    const stagePlan = [
+      {
+        stage: "Map",
+        checkpoint: "Gap map locked",
+        title: `Day 1: Baseline ${mainFocus}`,
+        goal: `Find the exact first break in understanding for ${mainFocus}, not just the broad weak topic.`,
+        tasks: [
+          `Tick each selected syllabus point as Green, Amber, or Red, starting with ${mainFocus}.`,
+          "Answer the Foundation lane cold and tag every miss by command word, fact, method, or explanation.",
+          `Write a one-line parent diagnosis: "The gap is ${mainFocus} because..." with evidence from the quiz.`
+        ],
+        evidence: "RAG checklist plus first-miss list"
+      },
+      {
+        stage: "Rebuild",
+        checkpoint: "Core explanation passes",
+        title: `Day 2: Rebuild ${mainFocus}`,
+        goal: `Turn ${mainFocus} into a clean teach-back that survives follow-up questions.`,
+        tasks: [
+          "Study only the note cards that match yesterday's Red and Amber tags.",
+          `Make a three-part teach-back: definition, worked example, and why ${profile.trap} is wrong.`,
+          "Retake only missed Foundation questions until every correction can be explained without notes."
+        ],
+        evidence: "60-second teach-back recording or written script"
+      },
+      {
+        stage: "Connect",
+        checkpoint: "Examples transferred",
+        title: `Day 3: Link ${secondaryFocus}`,
+        goal: `Connect ${secondaryFocus} to ${mainFocus} so the student can handle mixed wording.`,
+        tasks: [
+          `Draw a mini concept path from ${mainFocus} to ${secondaryFocus} using the visual explainer.`,
+          `Complete the first ${Math.max(4, Math.ceil(worksheetCount / 3))} worksheet questions untimed and annotate the method used.`,
+          "Rewrite two weak answers using the marking points, then compare the before and after versions."
+        ],
+        evidence: "Annotated worked examples"
+      },
+      {
+        stage: "Repair",
+        checkpoint: "Trap removed",
+        title: `Day 4: Break the ${profile.trap} trap`,
+        goal: `Remove the highest-risk mistake before moving into exam speed.`,
+        tasks: [
+          "Sort wrong answers from Days 1-3 into misunderstanding, missed keyword, careless step, or timing.",
+          `Create a two-column trap card: tempting wrong idea vs correct ${contentTopic} rule.`,
+          "Complete the Core lane and add every miss back into the correction list."
+        ],
+        evidence: "Trap card plus corrected Core misses"
+      },
+      {
+        stage: "Apply",
+        checkpoint: "Exam response built",
+        title: `Day 5: Build exam answers for ${thirdFocus}`,
+        goal: `Move from knowing ${contentTopic} to writing mark-winning answers.`,
+        tasks: [
+          `Finish the remaining worksheet questions, prioritising ${thirdFocus}.`,
+          "Mark the worksheet or upload it for marking if the bridge is available.",
+          "Convert feedback into three answer rules the student must follow next time."
+        ],
+        evidence: "Marked worksheet and three answer rules"
+      },
+      {
+        stage: "Pressure",
+        checkpoint: "Timed confidence checked",
+        title: `Day 6: Timed retest on ${fourthFocus}`,
+        goal: "Check whether the skill still holds when time, mixed questions, and harder wording are added.",
+        tasks: [
+          "Redo selected worksheet questions under a strict timer with no notes.",
+          "Complete the Stretch lane and star any question that felt slow rather than impossible.",
+          "Review only the starred questions and write the fastest valid method for each."
+        ],
+        evidence: "Timed score plus slow-question list"
+      },
+      {
+        stage: "Launch",
+        checkpoint: "Next plan chosen",
+        title: "Day 7: Parent review and next mission",
+        goal: "Turn the week's evidence into a confident next study decision.",
+        tasks: [
+          "Review quiz misses, worksheet corrections, notes highlights, and timed retest results.",
+          "Write a student summary with three labels: mastered, improving, still weak.",
+          "Choose the next Red or Amber subtopic in IC Educate and generate the next journey."
+        ],
+        evidence: "Parent summary and next weak topic"
+      }
+    ];
 
     return {
-      intro: `This 7-day plan is built for ${request.syllabus} ${request.level} ${request.topic}. It focuses on ${contentSubtopicForRequest(request)} with a ${paceLabel}.`,
+      intro: `A 7-day recovery journey for ${request.syllabus} ${request.level} ${request.topic}: diagnose, rebuild, connect, repair, apply, pressure-test, then choose the next weak point. Focus: ${contentSubtopicForRequest(request)} with a ${paceLabel}.`,
       meta: {
         curriculum: request.syllabus,
         level: request.level,
@@ -2131,71 +2251,7 @@
           value: `${worksheetCount} worksheet questions plus Foundation, Core, and Stretch quiz lanes`
         }
       ],
-      days: [
-        {
-          title: "Day 1: Diagnose the gap",
-          goal: `Confirm what the student already knows about ${mainFocus}.`,
-          tasks: [
-            "Read the coverage checklist and highlight unfamiliar terms.",
-            "Answer the Foundation quiz lane without notes.",
-            "Write down every missed concept as a weak-area list."
-          ]
-        },
-        {
-          title: "Day 2: Rebuild the core idea",
-          goal: `Make ${mainFocus} explainable in plain language.`,
-          tasks: [
-            "Study the first two notes cards slowly.",
-            "Create one short definition, one example, and one non-example.",
-            "Retake missed Foundation questions until the explanation is clean."
-          ]
-        },
-        {
-          title: "Day 3: Add worked examples",
-          goal: `Connect ${mainFocus} to standard question wording.`,
-          tasks: [
-            "Use the concept map to explain the process or method out loud.",
-            "Complete half of the worksheet questions without timing.",
-            "Check each answer against the answer key and rewrite weak steps."
-          ]
-        },
-        {
-          title: "Day 4: Fix common mistakes",
-          goal: `Attack the trap: ${profile.trap}.`,
-          tasks: [
-            "Review all wrong answers from Days 1-3.",
-            "Write why each wrong answer was tempting.",
-            "Complete the Core quiz lane and replay misses."
-          ]
-        },
-        {
-          title: "Day 5: Exam-style practice",
-          goal: `Move from understanding to usable exam performance in ${contentTopic}.`,
-          tasks: [
-            "Finish the remaining worksheet questions.",
-            "Mark the worksheet or upload it for marking if the bridge is available.",
-            "Turn feedback into a three-point correction list."
-          ]
-        },
-        {
-          title: "Day 6: Timed retest",
-          goal: "Check whether the skill survives time pressure.",
-          tasks: [
-            "Redo selected worksheet questions under time.",
-            "Complete the Stretch quiz lane.",
-            "Review only the questions that still feel uncertain."
-          ]
-        },
-        {
-          title: "Day 7: Parent review and next plan",
-          goal: "Summarize progress and choose the next weak topic.",
-          tasks: [
-            "Review quiz misses, worksheet corrections, and notes highlights.",
-            "Write a one-paragraph student summary: mastered, improving, still weak.",
-            "Select the next topic/subtopic in IC Educate and generate the next plan."
-          ]
-        }
-      ]
+      days: stagePlan
     };
   }
 
@@ -2722,14 +2778,21 @@
     elements.planDayList.innerHTML = days
       .map(
         (day, index) => `
-          <li class="plan-day-card">
-            <div class="plan-day-index">${index + 1}</div>
-            <div>
+          <li class="plan-day-card" style="--step: ${index + 1}">
+            <div class="plan-day-node" aria-hidden="true">
+              <span>${index + 1}</span>
+            </div>
+            <div class="plan-day-body">
+              <div class="plan-day-topline">
+                <span class="plan-stage">${escapeHtml(day.stage || `Day ${index + 1}`)}</span>
+                <span class="plan-checkpoint">${escapeHtml(day.checkpoint || "Checkpoint ready")}</span>
+              </div>
               <h3>${escapeHtml(day.title)}</h3>
               <p class="hub-copy">${escapeHtml(day.goal)}</p>
-              <ul class="point-list">
-                ${(Array.isArray(day.tasks) ? day.tasks : []).map((task) => `<li>${escapeHtml(task)}</li>`).join("")}
+              <ul class="plan-checklist">
+                ${(Array.isArray(day.tasks) ? day.tasks : []).map((task) => `<li><span class="task-check" aria-hidden="true"></span><span>${escapeHtml(task)}</span></li>`).join("")}
               </ul>
+              <p class="plan-evidence"><span>Proof</span>${escapeHtml(day.evidence || "Completed checklist")}</p>
             </div>
           </li>
         `
@@ -2804,7 +2867,10 @@
       elements.quizFeedback.hidden = false;
       elements.quizFeedback.className = "feedback-panel correct";
       elements.quizFeedbackTitle.textContent = "Lane complete";
-      elements.quizFeedbackBody.textContent = "Every question in this lane has been answered correctly at least once.";
+      elements.quizFeedbackBody.innerHTML = buildFeedbackAnimation(
+        { correct: true, explanation: "Every question in this lane has been answered correctly at least once." },
+        { concept: `${state.currentLane} lane mastered`, choices: [] }
+      );
       elements.nextQuestionButton.disabled = true;
       renderReplayQueue(session, questions);
       return;
@@ -2854,11 +2920,11 @@
       elements.quizFeedback.hidden = false;
       elements.quizFeedback.className = `feedback-panel ${session.lastResult.correct ? "correct" : "incorrect"}`;
       elements.quizFeedbackTitle.textContent = session.lastResult.correct ? "Correct" : "Not yet";
-      elements.quizFeedbackBody.textContent = session.lastResult.explanation;
+      elements.quizFeedbackBody.innerHTML = buildFeedbackAnimation(session.lastResult, currentQuestion);
     } else {
       elements.quizFeedback.hidden = true;
       elements.quizFeedbackTitle.textContent = "";
-      elements.quizFeedbackBody.textContent = "";
+      elements.quizFeedbackBody.innerHTML = "";
     }
 
     elements.nextQuestionButton.disabled = !session.awaitingContinue;
