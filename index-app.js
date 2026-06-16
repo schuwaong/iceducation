@@ -444,6 +444,7 @@
     mergeOfficialCambridgePrimaryLowerSecondarySubjects();
     mergeHkdseSubjects();
     mergeOxfordAqaSubjects();
+    mergePearsonIplsSubjects();
     mergeSpmKssmSubjects();
   }
 
@@ -713,6 +714,55 @@
     if (state.catalogStats) {
       state.catalogStats = {
         ...state.catalogStats,
+        subjectCount: state.catalogStats.subjectCount + labels.length,
+        topicPackCount: state.catalogStats.topicPackCount + labels.length,
+        subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
+  }
+
+  function pearsonIplsCatalogSyllabus() {
+    const reader = window.IC_EDUCATE_PEARSON_IPLS_PACKS?.catalogSyllabus;
+    if (typeof reader !== "function") {
+      return null;
+    }
+    try {
+      const syllabus = reader();
+      return syllabus && Array.isArray(syllabus.subjects) ? syllabus : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function mergePearsonIplsSubjects() {
+    const syllabus = pearsonIplsCatalogSyllabus();
+    if (!syllabus) {
+      return;
+    }
+    const syllabusName = safeText(syllabus.name, "Pearson Edexcel i Primary i Lower Secondary");
+    const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["Standard"];
+    const hadSyllabus = Boolean(state.catalog[syllabusName]);
+    const labels = [];
+    syllabus.subjects.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      labels.push(label);
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+    });
+    state.catalog[syllabusName] = {
+      levels: Object.fromEntries(levels.map((level) => [level, labels]))
+    };
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...labels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        syllabusCount: state.catalogStats.syllabusCount + (hadSyllabus ? 0 : 1),
         subjectCount: state.catalogStats.subjectCount + labels.length,
         topicPackCount: state.catalogStats.topicPackCount + labels.length,
         subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
@@ -2325,6 +2375,23 @@
     }
   }
 
+  function buildPearsonIplsPack(request) {
+    const finder = window.IC_EDUCATE_PEARSON_IPLS_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function buildSpmKssmPack(request) {
     const finder = window.IC_EDUCATE_SPM_KSSM_PACKS?.find;
     if (typeof finder !== "function") {
@@ -2492,6 +2559,11 @@
     if (source === "oxfordaqa") {
       elements.cacheStatus.textContent = `Loaded from OxfordAQA specification bundle | ${time}`;
       elements.packMeta.textContent = "OxfordAQA specification bundle";
+      return;
+    }
+    if (source === "pearson-ipls") {
+      elements.cacheStatus.textContent = `Loaded from Pearson iPrimary/iLowerSecondary bundle | ${time}`;
+      elements.packMeta.textContent = "Pearson iPrimary/iLowerSecondary bundle";
       return;
     }
     if (source === "spm") {
@@ -2909,6 +2981,15 @@
       store[key] = oxfordAqaPack;
       saveCacheStore(store);
       renderPack(oxfordAqaPack, "oxfordaqa");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const pearsonIplsPack = buildPearsonIplsPack(request);
+    if (pearsonIplsPack) {
+      store[key] = pearsonIplsPack;
+      saveCacheStore(store);
+      renderPack(pearsonIplsPack, "pearson-ipls");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
