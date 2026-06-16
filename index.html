@@ -3,26 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>IC Education Study Builder</title>
+  <title>IC Educate Study Plan Builder</title>
   <meta
     name="description"
-    content="Create a simple cached study site with notes, quiz lanes, and worksheet marking."
+    content="Create a 7-day study plan with notes, quiz lanes, worksheets, and marking."
   >
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,700&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=studioprime-catalog-v1">
+  <link rel="stylesheet" href="styles.css?v=seven-day-plan-v1">
 </head>
 <body class="study-builder-page">
   <div class="study-shell">
     <main class="study-app">
       <section class="study-hero">
         <div class="study-hero-copy">
-          <p class="eyebrow">IC Education</p>
-          <h1>Simple study site builder</h1>
+          <p class="eyebrow">IC Educate</p>
+          <h1>Generate a 7-day study plan</h1>
           <p class="hub-copy">
-            Pick the subject, syllabus topic, and exact subtopic. Generate one clean learning pack with notes,
-            quiz lanes, and a worksheet that stays cached for the next visit.
+            Pick the curriculum, subject, topic, and weak subtopics. IC Educate turns the selection into a
+            7-day plan, notes, quiz lanes, and a worksheet that stays cached for the next visit.
           </p>
         </div>
         <div class="study-hero-status">
@@ -130,7 +130,7 @@
           </div>
 
           <div class="study-actions">
-            <button class="primary-button" id="generateButton" type="submit">Generate study pack</button>
+            <button class="primary-button" id="generateButton" type="submit">Generate 7-day plan</button>
             <button class="ghost-button" id="clearCacheButton" type="button">Clear cache</button>
           </div>
         </form>
@@ -145,6 +145,10 @@
           </div>
           <div class="summary-metrics">
             <article class="summary-card">
+              <span>Study days</span>
+              <strong id="planCount">0</strong>
+            </article>
+            <article class="summary-card">
               <span>Notes cards</span>
               <strong id="notesCount">0</strong>
             </article>
@@ -152,20 +156,45 @@
               <span>Quiz questions</span>
               <strong id="questionCount">0</strong>
             </article>
-            <article class="summary-card">
-              <span>Worksheet</span>
-              <strong id="worksheetCount">0</strong>
-            </article>
           </div>
         </div>
 
         <div class="study-tabs" role="tablist" aria-label="Study pack tabs">
-          <button class="study-tab active" type="button" data-tab="notes" aria-selected="true">Notes</button>
+          <button class="study-tab active" type="button" data-tab="plan" aria-selected="true">7-Day Plan</button>
+          <button class="study-tab" type="button" data-tab="notes" aria-selected="false">Notes</button>
           <button class="study-tab" type="button" data-tab="quiz" aria-selected="false">Quiz</button>
           <button class="study-tab" type="button" data-tab="worksheet" aria-selected="false">Worksheet</button>
         </div>
 
-        <section class="study-panel" id="notesPanel" role="tabpanel">
+        <section class="study-panel" id="planPanel" role="tabpanel">
+          <div class="plan-layout">
+            <article class="panel-card plan-summary-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Parent Diagnostic</p>
+                  <h3>Your 7-day recovery plan</h3>
+                </div>
+                <span class="study-pill soft" id="planMeta">7 days</span>
+              </div>
+              <p class="hub-copy" id="planIntro">
+                Select topics and generate a plan to begin.
+              </p>
+              <div class="plan-focus-grid" id="planFocusGrid"></div>
+            </article>
+
+            <article class="panel-card">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Daily Actions</p>
+                  <h3>What to do each day</h3>
+                </div>
+              </div>
+              <ol class="plan-day-list" id="planDayList"></ol>
+            </article>
+          </div>
+        </section>
+
+        <section class="study-panel" id="notesPanel" role="tabpanel" hidden>
           <div class="notes-layout">
             <article class="panel-card">
               <div class="panel-head">
@@ -313,6 +342,9 @@
   <script src="generator-core.js"></script>
   <script src="library-snapshot.js?v=studioprime-catalog-v4"></script>
   <script src="prebuilt-study-packs.js?v=bio14-prebuilt-v1"></script>
-  <script src="index-app.js?v=bio14-prebuilt-v1"></script>
+  <script src="generated-science-study-packs.js?v=igcse-science-generated-v1"></script>
+  <script src="generated-igcse-subject-packs.js?v=official-igcse-subjects-v1"></script>
+  <script src="generated-spm-kssm-packs.js?v=spm-kssm-dskp-v1"></script>
+  <script src="index-app.js?v=seven-day-plan-v1"></script>
 </body>
 </html>

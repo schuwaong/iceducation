@@ -70,7 +70,7 @@
 
   const state = {
     currentPack: null,
-    currentTab: "notes",
+    currentTab: "plan",
     currentLane: "Foundation",
     quizSessions: {},
     bridgeOnline: false,
@@ -114,6 +114,7 @@
     studyWorkspace: document.getElementById("studyWorkspace"),
     packTitle: document.getElementById("packTitle"),
     packSubtitle: document.getElementById("packSubtitle"),
+    planCount: document.getElementById("planCount"),
     notesCount: document.getElementById("notesCount"),
     questionCount: document.getElementById("questionCount"),
     worksheetCount: document.getElementById("worksheetCount"),
@@ -122,6 +123,11 @@
     diagramMount: document.getElementById("diagramMount"),
     noteCards: document.getElementById("noteCards"),
     studyTabs: Array.from(document.querySelectorAll(".study-tab")),
+    planPanel: document.getElementById("planPanel"),
+    planMeta: document.getElementById("planMeta"),
+    planIntro: document.getElementById("planIntro"),
+    planFocusGrid: document.getElementById("planFocusGrid"),
+    planDayList: document.getElementById("planDayList"),
     notesPanel: document.getElementById("notesPanel"),
     quizPanel: document.getElementById("quizPanel"),
     worksheetPanel: document.getElementById("worksheetPanel"),
@@ -433,6 +439,8 @@
     state.syllabusSubjectOrder = catalogState.syllabusSubjectOrder || Object.keys(FALLBACK_SYLLABUS_TOPICS);
     state.syllabusTopicsBySubject = catalogState.syllabusTopicsBySubject || { ...FALLBACK_SYLLABUS_TOPICS };
     state.syllabusTopicsByKey = catalogState.syllabusTopicsByKey || {};
+    mergeOfficialIgcseSubjects();
+    mergeSpmKssmSubjects();
   }
 
   function applyBundledSnapshot() {
@@ -443,6 +451,111 @@
     state.catalogStats = BUNDLED_SNAPSHOT?.stats || state.catalogStats;
     state.librarySummary = BUNDLED_SNAPSHOT?.library || state.librarySummary;
     return true;
+  }
+
+  function officialIgcseCatalogSubjects() {
+    const reader = window.IC_EDUCATE_OFFICIAL_IGCSE_SUBJECT_PACKS?.catalogSubjects;
+    if (typeof reader !== "function") {
+      return [];
+    }
+    try {
+      return Array.isArray(reader()) ? reader() : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function mergeOfficialIgcseSubjects() {
+    const extras = officialIgcseCatalogSubjects();
+    if (!extras.length) {
+      return;
+    }
+    const syllabusName = "Cambridge IGCSE";
+    if (!state.catalog[syllabusName]) {
+      state.catalog[syllabusName] = { levels: { IGCSE: [] } };
+    }
+    if (!state.catalog[syllabusName].levels) {
+      state.catalog[syllabusName].levels = { IGCSE: [] };
+    }
+    const igcseSubjects = Array.isArray(state.catalog[syllabusName].levels.IGCSE)
+      ? [...state.catalog[syllabusName].levels.IGCSE]
+      : [];
+    const known = new Set(igcseSubjects.map(safeText));
+    const addedLabels = [];
+    extras.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+      if (!known.has(label)) {
+        known.add(label);
+        igcseSubjects.push(label);
+        addedLabels.push(label);
+      }
+    });
+    state.catalog[syllabusName].levels.IGCSE = igcseSubjects;
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...addedLabels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        subjectCount: state.catalogStats.subjectCount + addedLabels.length,
+        topicPackCount: state.catalogStats.topicPackCount + addedLabels.length,
+        subtopicCount: state.catalogStats.subtopicCount + extras.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
+  }
+
+  function spmKssmCatalogSyllabus() {
+    const reader = window.IC_EDUCATE_SPM_KSSM_PACKS?.catalogSyllabus;
+    if (typeof reader !== "function") {
+      return null;
+    }
+    try {
+      const syllabus = reader();
+      return syllabus && Array.isArray(syllabus.subjects) ? syllabus : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function mergeSpmKssmSubjects() {
+    const syllabus = spmKssmCatalogSyllabus();
+    if (!syllabus) {
+      return;
+    }
+    const syllabusName = safeText(syllabus.name, "SPM / KSSM");
+    const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["Tingkatan 4", "Tingkatan 5"];
+    const labels = [];
+    syllabus.subjects.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      labels.push(label);
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+    });
+    state.catalog[syllabusName] = {
+      levels: Object.fromEntries(levels.map((level) => [level, labels]))
+    };
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...labels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        syllabusCount: state.catalogStats.syllabusCount + (state.catalog[syllabusName] ? 0 : 1),
+        subjectCount: state.catalogStats.subjectCount + labels.length,
+        topicPackCount: state.catalogStats.topicPackCount + labels.length,
+        subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
   }
 
   function subjectsForSelection(syllabus, level) {
@@ -1161,6 +1274,21 @@
         applyCatalogState(buildCatalogStateFromSyllabi(syllabi));
       }
       if (!syllabi.length) {
+        const usingBundledSnapshot = applyBundledSnapshot();
+        if (usingBundledSnapshot) {
+          state.librarySummary = payload?.library || state.librarySummary;
+          fillSelect(elements.syllabusSelect, Object.keys(state.catalog));
+          if (Object.keys(state.catalog).includes(request.syllabus)) {
+            elements.syllabusSelect.value = request.syllabus;
+          }
+          syncLevelOptions(request.level);
+          syncTopicOptions(request.topic);
+          syncChapterOptions(request.chapterIds || request.chapterId);
+          syncSubtopicOptions(request.subtopicIds || request.subtopicId);
+          syncLearningTargetOptions(request.learningTargets || request.learningTarget);
+          renderOfficialTopicChoices();
+          return;
+        }
         const subjects = payload?.topical?.subjects || [];
         const nextTopicsBySubject = { ...FALLBACK_SYLLABUS_TOPICS };
         const nextSubjects = [];
@@ -1644,6 +1772,115 @@
     };
   }
 
+  function buildSevenDayPlan(request, profile, focusItems, worksheet) {
+    const contentTopic = contentTopicForRequest(request);
+    const coverage = requestCoverageLabels(request);
+    const selectedPoints = coverage.length ? coverage : focusItems;
+    const mainFocus = selectedPoints[0] || contentTopic;
+    const secondaryFocus = selectedPoints[1] || focusItems[1] || contentTopic;
+    const worksheetCount = Array.isArray(worksheet?.questions) ? worksheet.questions.length : Number(request.worksheetLength) || 12;
+    const paceLabel = request.pace === "guided"
+      ? "guided foundation-first pace"
+      : request.pace === "fast"
+        ? "fast-track exam pace"
+        : "balanced concept and practice pace";
+
+    return {
+      intro: `This 7-day plan is built for ${request.syllabus} ${request.level} ${request.topic}. It focuses on ${contentSubtopicForRequest(request)} with a ${paceLabel}.`,
+      meta: {
+        curriculum: request.syllabus,
+        level: request.level,
+        subject: request.topic,
+        focus: mainFocus,
+        pace: paceLabel,
+        worksheetCount
+      },
+      focusCards: [
+        {
+          label: "Weak topic",
+          value: mainFocus
+        },
+        {
+          label: "Second priority",
+          value: secondaryFocus
+        },
+        {
+          label: "Main trap",
+          value: profile.trap
+        },
+        {
+          label: "Practice target",
+          value: `${worksheetCount} worksheet questions plus Foundation, Core, and Stretch quiz lanes`
+        }
+      ],
+      days: [
+        {
+          title: "Day 1: Diagnose the gap",
+          goal: `Confirm what the student already knows about ${mainFocus}.`,
+          tasks: [
+            "Read the coverage checklist and highlight unfamiliar terms.",
+            "Answer the Foundation quiz lane without notes.",
+            "Write down every missed concept as a weak-area list."
+          ]
+        },
+        {
+          title: "Day 2: Rebuild the core idea",
+          goal: `Make ${mainFocus} explainable in plain language.`,
+          tasks: [
+            "Study the first two notes cards slowly.",
+            "Create one short definition, one example, and one non-example.",
+            "Retake missed Foundation questions until the explanation is clean."
+          ]
+        },
+        {
+          title: "Day 3: Add worked examples",
+          goal: `Connect ${mainFocus} to standard question wording.`,
+          tasks: [
+            "Use the concept map to explain the process or method out loud.",
+            "Complete half of the worksheet questions without timing.",
+            "Check each answer against the answer key and rewrite weak steps."
+          ]
+        },
+        {
+          title: "Day 4: Fix common mistakes",
+          goal: `Attack the trap: ${profile.trap}.`,
+          tasks: [
+            "Review all wrong answers from Days 1-3.",
+            "Write why each wrong answer was tempting.",
+            "Complete the Core quiz lane and replay misses."
+          ]
+        },
+        {
+          title: "Day 5: Exam-style practice",
+          goal: `Move from understanding to usable exam performance in ${contentTopic}.`,
+          tasks: [
+            "Finish the remaining worksheet questions.",
+            "Mark the worksheet or upload it for marking if the bridge is available.",
+            "Turn feedback into a three-point correction list."
+          ]
+        },
+        {
+          title: "Day 6: Timed retest",
+          goal: "Check whether the skill survives time pressure.",
+          tasks: [
+            "Redo selected worksheet questions under time.",
+            "Complete the Stretch quiz lane.",
+            "Review only the questions that still feel uncertain."
+          ]
+        },
+        {
+          title: "Day 7: Parent review and next plan",
+          goal: "Summarize progress and choose the next weak topic.",
+          tasks: [
+            "Review quiz misses, worksheet corrections, and notes highlights.",
+            "Write a one-paragraph student summary: mastered, improving, still weak.",
+            "Select the next topic/subtopic in IC Educate and generate the next plan."
+          ]
+        }
+      ]
+    };
+  }
+
   function buildStudyPack(request) {
     const contentTopic = contentTopicForRequest(request);
     const profile = buildTopicProfile(contentTopic);
@@ -1652,6 +1889,7 @@
     const noteCards = buildNoteCards(request, profile, focusItems);
     const quizLanes = buildQuizLanes(request, profile, focusItems);
     const worksheet = buildWorksheet(request, profile, focusItems);
+    const studyPlan = buildSevenDayPlan(request, profile, focusItems, worksheet);
     const totalQuestions = Object.values(quizLanes).reduce((sum, lane) => sum + lane.length, 0);
 
     return {
@@ -1673,6 +1911,7 @@
         lanes: quizLanes,
         totalQuestions
       },
+      studyPlan,
       worksheet
     };
   }
@@ -1709,6 +1948,28 @@
     const worksheet = rawPack?.worksheet || {};
     const answerKeyLines = Array.isArray(worksheet.answerKeyLines) ? worksheet.answerKeyLines : [];
 
+    const normalizedWorksheet = {
+      intro: safeText(worksheet.intro) || `Extra practice for ${contentTopic}.`,
+      questions: Array.isArray(worksheet.questions) ? worksheet.questions : [],
+      answerKeyLines,
+      rubricText: safeText(worksheet.rubricText) || answerKeyLines.join("\n\n"),
+      generatorScript: safeText(worksheet.generatorScript),
+      generatorCommand: safeText(worksheet.generatorCommand),
+      scriptNote: safeText(worksheet.scriptNote),
+      generatedPdfUrl: resolveApiUrl(
+        worksheet.generatedPdfUrl
+        || rawPack?.result?.output?.pdfPathLocalUrl
+        || rawPack?.result?.output?.pdfUrlAbsolute
+        || rawPack?.result?.output?.pdfUrl
+      ),
+      generatedAnswerKeyUrl: resolveApiUrl(
+        worksheet.generatedAnswerKeyUrl
+        || rawPack?.result?.output?.answerKeyLocalUrl
+        || rawPack?.result?.output?.answerKeyPdfUrlAbsolute
+        || rawPack?.result?.output?.markSchemePdfUrl
+      )
+    };
+
     return {
       id: safeText(rawPack.id) || `pack-${slugify(contentTopic)}-${Date.now()}`,
       cacheKey: buildRequestKey(request),
@@ -1728,32 +1989,64 @@
         lanes: normalizedLanes,
         totalQuestions
       },
-      worksheet: {
-        intro: safeText(worksheet.intro) || `Extra practice for ${contentTopic}.`,
-        questions: Array.isArray(worksheet.questions) ? worksheet.questions : [],
-        answerKeyLines,
-        rubricText: safeText(worksheet.rubricText) || answerKeyLines.join("\n\n"),
-        generatorScript: safeText(worksheet.generatorScript),
-        generatorCommand: safeText(worksheet.generatorCommand),
-        scriptNote: safeText(worksheet.scriptNote),
-        generatedPdfUrl: resolveApiUrl(
-          worksheet.generatedPdfUrl
-          || rawPack?.result?.output?.pdfPathLocalUrl
-          || rawPack?.result?.output?.pdfUrlAbsolute
-          || rawPack?.result?.output?.pdfUrl
-        ),
-        generatedAnswerKeyUrl: resolveApiUrl(
-          worksheet.generatedAnswerKeyUrl
-          || rawPack?.result?.output?.answerKeyLocalUrl
-          || rawPack?.result?.output?.answerKeyPdfUrlAbsolute
-          || rawPack?.result?.output?.markSchemePdfUrl
-        )
-      }
+      studyPlan: rawPack.studyPlan || buildSevenDayPlan(request, profile, focusItems, normalizedWorksheet),
+      worksheet: normalizedWorksheet
     };
   }
 
   function buildPrebuiltPack(request) {
     const finder = window.IC_EDUCATE_PREBUILT_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function buildGeneratedSciencePack(request) {
+    const finder = window.IC_EDUCATE_GENERATED_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function buildOfficialIgcseSubjectPack(request) {
+    const finder = window.IC_EDUCATE_OFFICIAL_IGCSE_SUBJECT_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function buildSpmKssmPack(request) {
+    const finder = window.IC_EDUCATE_SPM_KSSM_PACKS?.find;
     if (typeof finder !== "function") {
       return null;
     }
@@ -1891,6 +2184,21 @@
       elements.packMeta.textContent = "Prebuilt cache";
       return;
     }
+    if (source === "generated") {
+      elements.cacheStatus.textContent = `Loaded from generated science bundle | ${time}`;
+      elements.packMeta.textContent = "Generated science bundle";
+      return;
+    }
+    if (source === "official") {
+      elements.cacheStatus.textContent = `Loaded from official syllabus bundle | ${time}`;
+      elements.packMeta.textContent = "Official syllabus bundle";
+      return;
+    }
+    if (source === "spm") {
+      elements.cacheStatus.textContent = `Loaded from SPM/KSSM DSKP bundle | ${time}`;
+      elements.packMeta.textContent = "SPM/KSSM DSKP bundle";
+      return;
+    }
     const sourceLabel = pack.source && pack.source !== "local" ? `AI generated (${pack.source})` : "Freshly generated";
     elements.cacheStatus.textContent = `${sourceLabel} | ${time}`;
     elements.packMeta.textContent = sourceLabel;
@@ -1927,6 +2235,56 @@
     elements.notesPanel.hidden = tabName !== "notes";
     elements.quizPanel.hidden = tabName !== "quiz";
     elements.worksheetPanel.hidden = tabName !== "worksheet";
+    elements.planPanel.hidden = tabName !== "plan";
+  }
+
+  function ensureStudyPlan(pack) {
+    if (pack?.studyPlan?.days?.length) {
+      return pack.studyPlan;
+    }
+    const request = pack?.request || {};
+    const contentTopic = contentTopicForRequest(request);
+    const profile = buildTopicProfile(contentTopic);
+    const focusItems = Array.isArray(pack?.notes?.focusItems) && pack.notes.focusItems.length
+      ? pack.notes.focusItems
+      : buildFocusItems(request, profile);
+    const plan = buildSevenDayPlan(request, profile, focusItems, pack?.worksheet || {});
+    pack.studyPlan = plan;
+    return plan;
+  }
+
+  function renderStudyPlan(pack) {
+    const plan = ensureStudyPlan(pack);
+    const days = Array.isArray(plan.days) ? plan.days : [];
+    const focusCards = Array.isArray(plan.focusCards) ? plan.focusCards : [];
+    elements.planMeta.textContent = `${days.length || 7} days`;
+    elements.planIntro.textContent = safeText(plan.intro) || "A 7-day plan has been generated from the selected topics and weak areas.";
+    elements.planFocusGrid.innerHTML = focusCards
+      .map(
+        (card) => `
+          <article class="plan-focus-card">
+            <span>${escapeHtml(card.label)}</span>
+            <strong>${escapeHtml(card.value)}</strong>
+          </article>
+        `
+      )
+      .join("");
+    elements.planDayList.innerHTML = days
+      .map(
+        (day, index) => `
+          <li class="plan-day-card">
+            <div class="plan-day-index">${index + 1}</div>
+            <div>
+              <h3>${escapeHtml(day.title)}</h3>
+              <p class="hub-copy">${escapeHtml(day.goal)}</p>
+              <ul class="point-list">
+                ${(Array.isArray(day.tasks) ? day.tasks : []).map((task) => `<li>${escapeHtml(task)}</li>`).join("")}
+              </ul>
+            </div>
+          </li>
+        `
+      )
+      .join("");
   }
 
   function renderNotes(pack) {
@@ -2160,14 +2518,22 @@
     elements.studyWorkspace.hidden = false;
     elements.packTitle.textContent = pack.title;
     elements.packSubtitle.textContent = buildPackSummary(pack);
+    if (!pack.studyPlan?.days?.length) {
+      ensureStudyPlan(pack);
+      persistCurrentPack();
+    }
+    elements.planCount.textContent = String(pack.studyPlan?.days?.length || 7);
     elements.notesCount.textContent = String(pack.notes.noteCards.length);
     elements.questionCount.textContent = String(pack.quiz.totalQuestions);
-    elements.worksheetCount.textContent = String(pack.worksheet.questions.length);
+    if (elements.worksheetCount) {
+      elements.worksheetCount.textContent = String(pack.worksheet.questions.length);
+    }
+    renderStudyPlan(pack);
     renderNotes(pack);
     renderQuiz();
     renderWorksheet(pack);
     updateCacheStatus(source, pack);
-    setActiveTab("notes");
+    setActiveTab("plan");
     window.localStorage.setItem(LAST_PACK_KEY, pack.cacheKey);
   }
 
@@ -2189,6 +2555,33 @@
       store[key] = prebuiltPack;
       saveCacheStore(store);
       renderPack(prebuiltPack, "prebuilt");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const generatedSciencePack = buildGeneratedSciencePack(request);
+    if (generatedSciencePack) {
+      store[key] = generatedSciencePack;
+      saveCacheStore(store);
+      renderPack(generatedSciencePack, "generated");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const officialIgcsePack = buildOfficialIgcseSubjectPack(request);
+    if (officialIgcsePack) {
+      store[key] = officialIgcsePack;
+      saveCacheStore(store);
+      renderPack(officialIgcsePack, "official");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const spmKssmPack = buildSpmKssmPack(request);
+    if (spmKssmPack) {
+      store[key] = spmKssmPack;
+      saveCacheStore(store);
+      renderPack(spmKssmPack, "spm");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
@@ -2242,7 +2635,7 @@
         pack.fallbackReason = safeText(error.message || "AI generation failed");
       } finally {
         elements.generateButton.disabled = false;
-        elements.generateButton.textContent = "Generate study pack";
+        elements.generateButton.textContent = "Generate 7-day plan";
       }
     } else {
       pack = buildStudyPack(request);

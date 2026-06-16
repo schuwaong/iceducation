@@ -1214,7 +1214,8 @@ body.study-builder-page {
 }
 
 .notes-layout,
-.worksheet-layout {
+.worksheet-layout,
+.plan-layout {
   display: grid;
   gap: 18px;
   grid-template-columns: 1.1fr 0.9fr;
@@ -1364,6 +1365,77 @@ body.study-builder-page {
   gap: 6px;
 }
 
+.plan-summary-card {
+  background:
+    radial-gradient(circle at top right, rgba(110, 231, 216, 0.12), transparent 32%),
+    rgba(5, 10, 18, 0.54);
+}
+
+.plan-focus-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.plan-focus-card {
+  min-width: 0;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(238, 247, 255, 0.13);
+  background: rgba(238, 247, 255, 0.06);
+}
+
+.plan-focus-card span {
+  display: block;
+  color: rgba(238, 247, 255, 0.62);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.plan-focus-card strong {
+  display: block;
+  margin-top: 8px;
+  color: #f4fbff;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.plan-day-list {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-day-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(238, 247, 255, 0.13);
+  background: rgba(238, 247, 255, 0.055);
+}
+
+.plan-day-card .point-list {
+  margin-top: 10px;
+}
+
+.plan-day-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  color: #04110f;
+  background: linear-gradient(135deg, #6ee7d8, #8fb7ff);
+  font-weight: 800;
+}
+
 .script-wrap {
   margin-top: 18px;
   padding: 16px;
@@ -1402,6 +1474,7 @@ body.study-builder-page {
   .study-hero,
   .workspace-summary,
   .notes-layout,
+  .plan-layout,
   .worksheet-layout,
   .note-card-grid {
     grid-template-columns: 1fr;
@@ -1440,7 +1513,11 @@ body.study-builder-page {
   .lane-switch {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .plan-focus-grid {
+    grid-template-columns: 1fr;
   }
 
   .study-actions {
