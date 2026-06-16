@@ -442,6 +442,8 @@
     mergeOfficialIgcseSubjects();
     mergeOfficialCambridgeALevelSubjects();
     mergeOfficialCambridgePrimaryLowerSecondarySubjects();
+    mergeHkdseSubjects();
+    mergeOxfordAqaSubjects();
     mergeSpmKssmSubjects();
   }
 
@@ -624,6 +626,100 @@
         };
       }
     });
+  }
+
+  function hkdseCatalogSyllabus() {
+    const reader = window.IC_EDUCATE_HKDSE_PACKS?.catalogSyllabus;
+    if (typeof reader !== "function") {
+      return null;
+    }
+    try {
+      const syllabus = reader();
+      return syllabus && Array.isArray(syllabus.subjects) ? syllabus : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function mergeHkdseSubjects() {
+    const syllabus = hkdseCatalogSyllabus();
+    if (!syllabus) {
+      return;
+    }
+    const syllabusName = safeText(syllabus.name, "HKDSE");
+    const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["DSE"];
+    const labels = [];
+    syllabus.subjects.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      labels.push(label);
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+    });
+    state.catalog[syllabusName] = {
+      levels: Object.fromEntries(levels.map((level) => [level, labels]))
+    };
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...labels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        subjectCount: state.catalogStats.subjectCount + labels.length,
+        topicPackCount: state.catalogStats.topicPackCount + labels.length,
+        subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
+  }
+
+  function oxfordAqaCatalogSyllabus() {
+    const reader = window.IC_EDUCATE_OXFORDAQA_PACKS?.catalogSyllabus;
+    if (typeof reader !== "function") {
+      return null;
+    }
+    try {
+      const syllabus = reader();
+      return syllabus && Array.isArray(syllabus.subjects) ? syllabus : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function mergeOxfordAqaSubjects() {
+    const syllabus = oxfordAqaCatalogSyllabus();
+    if (!syllabus) {
+      return;
+    }
+    const syllabusName = safeText(syllabus.name, "Oxford AQA International GCSE & A Level");
+    const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["Standard"];
+    const labels = [];
+    syllabus.subjects.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      labels.push(label);
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+    });
+    state.catalog[syllabusName] = {
+      levels: Object.fromEntries(levels.map((level) => [level, labels]))
+    };
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...labels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        subjectCount: state.catalogStats.subjectCount + labels.length,
+        topicPackCount: state.catalogStats.topicPackCount + labels.length,
+        subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
   }
 
   function spmKssmCatalogSyllabus() {
@@ -2195,6 +2291,40 @@
     }
   }
 
+  function buildHkdsePack(request) {
+    const finder = window.IC_EDUCATE_HKDSE_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function buildOxfordAqaPack(request) {
+    const finder = window.IC_EDUCATE_OXFORDAQA_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function buildSpmKssmPack(request) {
     const finder = window.IC_EDUCATE_SPM_KSSM_PACKS?.find;
     if (typeof finder !== "function") {
@@ -2352,6 +2482,16 @@
     if (source === "cambridge-curriculum") {
       elements.cacheStatus.textContent = `Loaded from Cambridge Primary/Lower Secondary bundle | ${time}`;
       elements.packMeta.textContent = "Cambridge Primary/Lower Secondary bundle";
+      return;
+    }
+    if (source === "hkdse") {
+      elements.cacheStatus.textContent = `Loaded from HKEAA HKDSE bundle | ${time}`;
+      elements.packMeta.textContent = "HKEAA HKDSE bundle";
+      return;
+    }
+    if (source === "oxfordaqa") {
+      elements.cacheStatus.textContent = `Loaded from OxfordAQA specification bundle | ${time}`;
+      elements.packMeta.textContent = "OxfordAQA specification bundle";
       return;
     }
     if (source === "spm") {
@@ -2751,6 +2891,24 @@
       store[key] = officialCambridgePrimaryLowerSecondaryPack;
       saveCacheStore(store);
       renderPack(officialCambridgePrimaryLowerSecondaryPack, "cambridge-curriculum");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const hkdsePack = buildHkdsePack(request);
+    if (hkdsePack) {
+      store[key] = hkdsePack;
+      saveCacheStore(store);
+      renderPack(hkdsePack, "hkdse");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const oxfordAqaPack = buildOxfordAqaPack(request);
+    if (oxfordAqaPack) {
+      store[key] = oxfordAqaPack;
+      saveCacheStore(store);
+      renderPack(oxfordAqaPack, "oxfordaqa");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
