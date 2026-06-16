@@ -443,6 +443,7 @@
     mergeOfficialCambridgeALevelSubjects();
     mergeOfficialCambridgePrimaryLowerSecondarySubjects();
     mergeHkdseSubjects();
+    mergeIbDiplomaSubjects();
     mergeOxfordAqaSubjects();
     mergePearsonIplsSubjects();
     mergeSpmKssmSubjects();
@@ -669,6 +670,61 @@
         ...state.catalogStats,
         subjectCount: state.catalogStats.subjectCount + labels.length,
         topicPackCount: state.catalogStats.topicPackCount + labels.length,
+        subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
+  }
+
+  function ibDiplomaCatalogSyllabus() {
+    const reader = window.IC_EDUCATE_IB_DIPLOMA_PACKS?.catalogSyllabus;
+    if (typeof reader !== "function") {
+      return null;
+    }
+    try {
+      const syllabus = reader();
+      return syllabus && Array.isArray(syllabus.subjects) ? syllabus : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function mergeIbDiplomaSubjects() {
+    const syllabus = ibDiplomaCatalogSyllabus();
+    if (!syllabus) {
+      return;
+    }
+    const syllabusName = safeText(syllabus.name, "IB Diploma");
+    const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["SL", "HL"];
+    const hadSyllabus = Boolean(state.catalog[syllabusName]);
+    const levelLabels = Object.fromEntries(levels.map((level) => [level, []]));
+    syllabus.subjects.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      const subjectLevels = Array.isArray(subject.levels) && subject.levels.length ? subject.levels.map(safeText) : levels;
+      subjectLevels.forEach((level) => {
+        if (!levelLabels[level]) {
+          levelLabels[level] = [];
+        }
+        levelLabels[level].push(label);
+      });
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+    });
+    state.catalog[syllabusName] = {
+      levels: Object.fromEntries(Object.entries(levelLabels).map(([level, labels]) => [level, unique(labels)]))
+    };
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...syllabus.subjects.map((subject) => safeText(subject.label || subject.value)).filter(Boolean)]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        syllabusCount: state.catalogStats.syllabusCount + (hadSyllabus ? 0 : 1),
+        subjectCount: state.catalogStats.subjectCount + syllabus.subjects.length,
+        topicPackCount: state.catalogStats.topicPackCount + syllabus.subjects.length,
         subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
           return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
         }, 0)
@@ -2358,6 +2414,23 @@
     }
   }
 
+  function buildIbDiplomaPack(request) {
+    const finder = window.IC_EDUCATE_IB_DIPLOMA_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function buildOxfordAqaPack(request) {
     const finder = window.IC_EDUCATE_OXFORDAQA_PACKS?.find;
     if (typeof finder !== "function") {
@@ -2554,6 +2627,11 @@
     if (source === "hkdse") {
       elements.cacheStatus.textContent = `Loaded from HKEAA HKDSE bundle | ${time}`;
       elements.packMeta.textContent = "HKEAA HKDSE bundle";
+      return;
+    }
+    if (source === "ib") {
+      elements.cacheStatus.textContent = `Loaded from IB Diploma subject brief bundle | ${time}`;
+      elements.packMeta.textContent = "IB Diploma subject brief bundle";
       return;
     }
     if (source === "oxfordaqa") {
@@ -2972,6 +3050,15 @@
       store[key] = hkdsePack;
       saveCacheStore(store);
       renderPack(hkdsePack, "hkdse");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const ibDiplomaPack = buildIbDiplomaPack(request);
+    if (ibDiplomaPack) {
+      store[key] = ibDiplomaPack;
+      saveCacheStore(store);
+      renderPack(ibDiplomaPack, "ib");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
