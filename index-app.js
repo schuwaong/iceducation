@@ -1,6 +1,6 @@
 (function () {
-  const CACHE_STORE_KEY = "ice-study-pack-cache-v6";
-  const LAST_PACK_KEY = "ice-study-pack-last-v6";
+  const CACHE_STORE_KEY = "ice-study-pack-cache-v7";
+  const LAST_PACK_KEY = "ice-study-pack-last-v7";
   const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
   const TRIAL_QUERY = new URLSearchParams(window.location.search);
   const TRIAL_BIOLOGY_14 = TRIAL_QUERY.get("trial") === "bio14";
