@@ -440,6 +440,7 @@
     state.syllabusTopicsBySubject = catalogState.syllabusTopicsBySubject || { ...FALLBACK_SYLLABUS_TOPICS };
     state.syllabusTopicsByKey = catalogState.syllabusTopicsByKey || {};
     mergeOfficialIgcseSubjects();
+    mergeOfficialCambridgeALevelSubjects();
     mergeSpmKssmSubjects();
   }
 
@@ -497,6 +498,69 @@
       }
     });
     state.catalog[syllabusName].levels.IGCSE = igcseSubjects;
+    state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...addedLabels]);
+    if (state.catalogStats) {
+      state.catalogStats = {
+        ...state.catalogStats,
+        subjectCount: state.catalogStats.subjectCount + addedLabels.length,
+        topicPackCount: state.catalogStats.topicPackCount + addedLabels.length,
+        subtopicCount: state.catalogStats.subtopicCount + extras.reduce((total, subject) => {
+          return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+        }, 0)
+      };
+    }
+  }
+
+  function officialCambridgeALevelCatalogSubjects() {
+    const reader = window.IC_EDUCATE_OFFICIAL_A_LEVEL_SUBJECT_PACKS?.catalogSubjects;
+    if (typeof reader !== "function") {
+      return [];
+    }
+    try {
+      return Array.isArray(reader()) ? reader() : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function mergeOfficialCambridgeALevelSubjects() {
+    const extras = officialCambridgeALevelCatalogSubjects();
+    if (!extras.length) {
+      return;
+    }
+    const syllabusName = "Cambridge A Level";
+    const levels = ["AS Level", "A Level"];
+    if (!state.catalog[syllabusName]) {
+      state.catalog[syllabusName] = { levels: {} };
+    }
+    if (!state.catalog[syllabusName].levels) {
+      state.catalog[syllabusName].levels = {};
+    }
+    const currentLabels = unique(levels.flatMap((level) => (
+      Array.isArray(state.catalog[syllabusName].levels[level])
+        ? state.catalog[syllabusName].levels[level].map(safeText)
+        : []
+    )));
+    const known = new Set(currentLabels);
+    const addedLabels = [];
+    const allLabels = [...currentLabels];
+    extras.forEach((subject) => {
+      const label = safeText(subject.label || subject.value);
+      if (!label) {
+        return;
+      }
+      const packs = normalizeTopicPacks(subject.topicPacks);
+      state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+      state.syllabusTopicsBySubject[label] = packs;
+      if (!known.has(label)) {
+        known.add(label);
+        allLabels.push(label);
+        addedLabels.push(label);
+      }
+    });
+    levels.forEach((level) => {
+      state.catalog[syllabusName].levels[level] = allLabels;
+    });
     state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...addedLabels]);
     if (state.catalogStats) {
       state.catalogStats = {
@@ -2045,6 +2109,23 @@
     }
   }
 
+  function buildOfficialCambridgeALevelSubjectPack(request) {
+    const finder = window.IC_EDUCATE_OFFICIAL_A_LEVEL_SUBJECT_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function buildSpmKssmPack(request) {
     const finder = window.IC_EDUCATE_SPM_KSSM_PACKS?.find;
     if (typeof finder !== "function") {
@@ -2192,6 +2273,11 @@
     if (source === "official") {
       elements.cacheStatus.textContent = `Loaded from official syllabus bundle | ${time}`;
       elements.packMeta.textContent = "Official syllabus bundle";
+      return;
+    }
+    if (source === "a-level") {
+      elements.cacheStatus.textContent = `Loaded from Cambridge AS/A Level syllabus bundle | ${time}`;
+      elements.packMeta.textContent = "Cambridge AS/A Level syllabus bundle";
       return;
     }
     if (source === "spm") {
@@ -2573,6 +2659,15 @@
       store[key] = officialIgcsePack;
       saveCacheStore(store);
       renderPack(officialIgcsePack, "official");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const officialCambridgeALevelPack = buildOfficialCambridgeALevelSubjectPack(request);
+    if (officialCambridgeALevelPack) {
+      store[key] = officialCambridgeALevelPack;
+      saveCacheStore(store);
+      renderPack(officialCambridgeALevelPack, "a-level");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
