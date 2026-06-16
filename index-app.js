@@ -441,6 +441,7 @@
     state.syllabusTopicsByKey = catalogState.syllabusTopicsByKey || {};
     mergeOfficialIgcseSubjects();
     mergeOfficialCambridgeALevelSubjects();
+    mergeOfficialCambridgePrimaryLowerSecondarySubjects();
     mergeSpmKssmSubjects();
   }
 
@@ -572,6 +573,57 @@
         }, 0)
       };
     }
+  }
+
+  function officialCambridgePrimaryLowerSecondaryCatalogSyllabi() {
+    const reader = window.IC_EDUCATE_CAMBRIDGE_PRIMARY_LOWER_SECONDARY_PACKS?.catalogSyllabi;
+    if (typeof reader !== "function") {
+      return [];
+    }
+    try {
+      return Array.isArray(reader()) ? reader() : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function mergeOfficialCambridgePrimaryLowerSecondarySubjects() {
+    const syllabi = officialCambridgePrimaryLowerSecondaryCatalogSyllabi();
+    if (!syllabi.length) {
+      return;
+    }
+    syllabi.forEach((syllabus) => {
+      const syllabusName = safeText(syllabus.name);
+      if (!syllabusName || !Array.isArray(syllabus.subjects)) {
+        return;
+      }
+      const levels = Array.isArray(syllabus.levels) && syllabus.levels.length ? syllabus.levels.map(safeText) : ["Standard"];
+      const labels = [];
+      syllabus.subjects.forEach((subject) => {
+        const label = safeText(subject.label || subject.value);
+        if (!label) {
+          return;
+        }
+        labels.push(label);
+        const packs = normalizeTopicPacks(subject.topicPacks);
+        state.syllabusTopicsByKey[`${syllabusName}::${label}`] = packs;
+        state.syllabusTopicsBySubject[label] = packs;
+      });
+      state.catalog[syllabusName] = {
+        levels: Object.fromEntries(levels.map((level) => [level, labels]))
+      };
+      state.syllabusSubjectOrder = unique([...state.syllabusSubjectOrder, ...labels]);
+      if (state.catalogStats) {
+        state.catalogStats = {
+          ...state.catalogStats,
+          subjectCount: state.catalogStats.subjectCount + labels.length,
+          topicPackCount: state.catalogStats.topicPackCount + labels.length,
+          subtopicCount: state.catalogStats.subtopicCount + syllabus.subjects.reduce((total, subject) => {
+            return total + normalizeTopicPacks(subject.topicPacks).reduce((sum, pack) => sum + pack.subtopics.length, 0);
+          }, 0)
+        };
+      }
+    });
   }
 
   function spmKssmCatalogSyllabus() {
@@ -2126,6 +2178,23 @@
     }
   }
 
+  function buildOfficialCambridgePrimaryLowerSecondaryPack(request) {
+    const finder = window.IC_EDUCATE_CAMBRIDGE_PRIMARY_LOWER_SECONDARY_PACKS?.find;
+    if (typeof finder !== "function") {
+      return null;
+    }
+    try {
+      const rawPack = finder(request);
+      if (!rawPack) {
+        return null;
+      }
+      const pack = normalizeAiPack(rawPack, request);
+      return packHasRenderableStudyContent(pack) ? pack : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   function buildSpmKssmPack(request) {
     const finder = window.IC_EDUCATE_SPM_KSSM_PACKS?.find;
     if (typeof finder !== "function") {
@@ -2278,6 +2347,11 @@
     if (source === "a-level") {
       elements.cacheStatus.textContent = `Loaded from Cambridge AS/A Level syllabus bundle | ${time}`;
       elements.packMeta.textContent = "Cambridge AS/A Level syllabus bundle";
+      return;
+    }
+    if (source === "cambridge-curriculum") {
+      elements.cacheStatus.textContent = `Loaded from Cambridge Primary/Lower Secondary bundle | ${time}`;
+      elements.packMeta.textContent = "Cambridge Primary/Lower Secondary bundle";
       return;
     }
     if (source === "spm") {
@@ -2668,6 +2742,15 @@
       store[key] = officialCambridgeALevelPack;
       saveCacheStore(store);
       renderPack(officialCambridgeALevelPack, "a-level");
+      elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    const officialCambridgePrimaryLowerSecondaryPack = buildOfficialCambridgePrimaryLowerSecondaryPack(request);
+    if (officialCambridgePrimaryLowerSecondaryPack) {
+      store[key] = officialCambridgePrimaryLowerSecondaryPack;
+      saveCacheStore(store);
+      renderPack(officialCambridgePrimaryLowerSecondaryPack, "cambridge-curriculum");
       elements.studyWorkspace.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
